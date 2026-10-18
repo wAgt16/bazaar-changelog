@@ -34,10 +34,6 @@ export const commitURL = (repo: string, sha: string): string => `https://github.
 /** 短哈希只用于显示，跳转仍用完整 sha。 */
 export const shortSha = (sha: string): string => sha.slice(0, 7);
 
-/** 两个端点之间的提交对比页。 */
-export const compareURL = (repo: string, base: string, head: string): string =>
-    `https://github.com/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
-
 interface IGithubCommit {
     sha?: unknown;
     html_url?: unknown;

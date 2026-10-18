@@ -33,6 +33,10 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 - **#PR / issue numbers and @user become GitHub links**: `#123`, `owner/repo#123` and `@user` in
   release notes, the CHANGELOG and commits are rendered as links (cross-repository references point at
   their own repository), and bare URLs become clickable too; this can be turned off in the settings.
+- **Links inside the dialog switch sources instead of leaving it**: a link to this repository's
+  changelog file, a release page (`/releases/tag/...`) or a commit comparison (`/compare/a...b`) switches
+  to that source with the version or range preselected; this works in release notes, the CHANGELOG and
+  commits alike. Ctrl/⌘-click still hands the link to the browser.
 - **Optional GitHub token**: set a personal access token to use your own quota for release notes and
   commits instead of the anonymous ~60 requests per hour; the token is only sent to `api.github.com`.
 - **GitHub acceleration switch**: off by default, so `api.github.com` and

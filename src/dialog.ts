@@ -3,6 +3,7 @@ import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
+import {classifyGitHubLink, repoWebURL} from "./githublinks";
 import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
 import type {IRelease} from "./github";
 import {t} from "./i18n";
@@ -68,6 +69,10 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     let rangeInitialized = false;
     /** 从只有 Full Changelog 链接的发行说明里读出的范围，切到提交记录时优先用它。 */
     let pendingRange: {base: string, head: string} | undefined;
+    /** 用户点的是某个发行版链接：切到发行说明后选中它。 */
+    let pendingVersion = "";
+    /** 过滤前的完整发行版列表：链接可能指向比集市更新的版本，那里也要能找到。 */
+    let allReleases: IRelease[] = [];
     /**
      * 本次打开里已经确认「这个仓库没有 CHANGELOG」/「这一版没有发行说明」。
      * 只认确定性结论（404、该版本正文为空），超时不算；两个都为真时提示合成一句，
@@ -230,6 +235,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const result = await fetchReleases(repo, options.settings, timeoutMs);
         releaseStatus = result.status;
         const list = result.status === "ok" ? result.releases : [];
+        allReleases = list;
         releases = keepKnown(list);
         debug(`dialog: ${releases.length} of ${list.length} releases kept`, {
             status: result.status,
@@ -296,7 +302,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     };
 
     const showRelease = async (token: number, tag: string) => {
-        const release = releases.find((item) => item.tag === tag) || releases[0];
+        // 可能是指向比集市更新的发行版的链接，所以回退到完整列表里找
+        const release = releases.find((item) => item.tag === tag) ||
+            allReleases.find((item) => item.tag === tag) || releases[0];
         if (!release) {
             debug("release notes: no release to show", {requested: tag, known: releases.length});
             setBody(t(i18n, "releaseNotesUnavailable"));
@@ -433,6 +441,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         fillVersionElement();
+        if (pendingVersion) {
+            const version = pendingVersion;
+            pendingVersion = "";
+            // 链接可能指向集市还没检索到的发行版，补一个选项再选中它
+            ensureOption(versionElement, version);
+            versionElement.value = version;
+            debug("release notes: version handed over by the caller", {tag: version});
+        }
         await showRelease(token, versionElement.value);
     };
 
@@ -595,11 +611,46 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     fromElement.addEventListener("change", onRangeChange);
     toElement.addEventListener("change", onRangeChange);
 
+    /**
+     * 正文里指向本仓库 changelog 文件、发行版页面或提交范围的链接就地切换来源，
+     * 不把用户甩到浏览器里。带修饰键（Ctrl/⌘ 等）时让浏览器照常打开，用户还能自己选。
+     */
+    const onBodyClick = (event: MouseEvent) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        if (!(event.target instanceof Element)) {
+            return;
+        }
+        const anchor = event.target.closest("a");
+        const href = anchor?.getAttribute("href") || "";
+        if (!anchor || !href || !bodyElement.contains(anchor)) {
+            return;
+        }
+        const target = classifyGitHubLink(href, repo);
+        if (!target) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        debug("dialog: link intercepted", {href, target});
+        if (target.type === "changelog") {
+            switchSource("changelog", ++requestID);
+            return;
+        }
+        if (target.type === "release") {
+            pendingVersion = target.tag;
+            switchSource("releaseNotes", ++requestID);
+            return;
+        }
+        pendingRange = {base: target.base, head: target.head};
+        switchSource("commits", ++requestID);
+    };
+    bodyElement.addEventListener("click", onBodyClick);
+
     sourceElement.value = options.settings.preferredSource;
     startSource(++requestID, true);
 };
-
-const repoWebURL = (repo: string) => `https://github.com/${repo}`;
 
 /**
  * 打开「更新日志」弹窗：顶部选来源（发行说明 / CHANGELOG / 提交记录），
