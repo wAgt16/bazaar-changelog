@@ -134,16 +134,16 @@ describe("fetchCommits 的响应", () => {
             .toEqual({status: "empty"});
     });
 
-    it("403 标记 forbidden，其他错误码不标记", async () => {
+    it("任何 HTTP 错误码都算失败，不区分是哪一种", async () => {
         stubFetch(() => mockResponse({}, {status: 403}));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error", forbidden: true});
+            .toEqual({status: "error"});
 
         vi.resetModules();
         commits = await import("../../src/commits");
-        stubFetch(() => mockResponse({}, {status: 500}));
+        stubFetch(() => mockResponse({}, {status: 502}));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error", forbidden: false});
+            .toEqual({status: "error"});
     });
 
     it("返回结构不认识时算失败", async () => {

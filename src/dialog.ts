@@ -540,19 +540,31 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (result.status === "error") {
-            // 开了加速还回 403：多半是反代不代理 compare 接口，直说，别让用户以为版本选错了
-            const hint = result.forbidden && options.settings.githubAcceleration ?
-                t(i18n, "commitsForbiddenViaAcceleration") : "";
+            // 反代不代理 compare 接口时回的码五花八门（403 / 404 / 502 都有），所以不看状态码：
+            // 只要开了加速又没拿到就提示。直连失败多半是限流或网络，那句话会把人带偏，因此不加。
+            const hint = options.settings.githubAcceleration ? t(i18n, "commitsAccelerationUnsupported") : "";
+            // compare 取不到时列表接口往往还能用：「不限 → HEAD」走的就是 /commits
+            const offered = range.base !== "" || range.head !== "HEAD";
             debug("commits: failed", {
-                forbidden: result.forbidden,
+                range,
                 acceleration: options.settings.githubAcceleration,
                 hint: Boolean(hint),
+                fallback: offered,
             });
-            if (hint) {
-                setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
-            } else {
-                setBody(t(i18n, "commitsUnavailable"));
+            if (!offered) {
+                if (hint) {
+                    setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
+                } else {
+                    setBody(t(i18n, "commitsUnavailable"));
+                }
+                return;
             }
+            setBodyWithAction(t(i18n, "commitsUnavailable"), t(i18n, "commitsToHead"), () => {
+                debug("commits: falling back to the commits up to HEAD");
+                fromElement.value = "";
+                toElement.value = "HEAD";
+                void loadCommits(++requestID);
+            }, hint);
             return;
         }
         renderCommits(result.commits, result.total);

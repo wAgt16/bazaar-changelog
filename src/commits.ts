@@ -18,8 +18,8 @@ export type TCommitsResult =
     | {status: "empty"}
     /** 超过本次超时。 */
     | {status: "timeout"}
-    /** 其他失败（网络错误、HTTP 错误码、限流）；`forbidden` 表示对方回了 403。 */
-    | {status: "error", forbidden?: boolean};
+    /** 其他失败（网络错误、HTTP 错误码、限流）；调用方不区分类别，失败就是失败。 */
+    | {status: "error"};
 
 const COMMITS_API = "https://api.github.com";
 /** 和发行说明同一个缓存窗口：仓库的历史不会在半小时里变样。 */
@@ -107,12 +107,11 @@ export const fetchCommits = async (
         if (!response.ok) {
             debug(`commits: ${repo} responded ${response.status}`, {
                 elapsed: Date.now() - started,
-                forbidden: response.status === 403,
                 rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),
                 rateLimitReset: response.headers.get("x-ratelimit-reset"),
             });
-            // 403 多半是被限流或反代拦下，弹窗要能据此给出更具体的提示
-            return {status: "error", forbidden: response.status === 403};
+            // 反代不代理 compare 时回的码五花八门，这里不区分：失败就是失败
+            return {status: "error"};
         }
         const payload: unknown = await response.json();
         // compare 回 {commits, total_commits}，列表接口直接回数组

@@ -350,19 +350,43 @@ describe("提交记录来源", () => {
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")).toBeNull();
     });
 
-    it("开了加速又回 403 时多给一句提示", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error", forbidden: true});
+    it("失败时给一个一键改成「不限 → HEAD」的入口", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error"});
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("无法获取提交记录");
+        expect(mocks.fetchCommits.mock.calls[0][1]).toEqual({base: "v1.2.2", head: "v1.2.3"});
+
+        mocks.fetchCommits.mockResolvedValue({status: "ok", commits: commits(), total: 2});
+        click(control("action"));
+        await expectBody("共 2 个提交");
+        expect(control<HTMLSelectElement>("from").value).toBe("");
+        expect(control<HTMLSelectElement>("to").value).toBe("HEAD");
+        expect(mocks.fetchCommits.mock.calls[1][1]).toEqual({base: "", head: "HEAD"});
+    });
+
+    it("范围本来就不限到 HEAD 时不再给这个入口", async () => {
+        mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
+        mocks.fetchCommits.mockResolvedValue({status: "error"});
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("无法获取提交记录");
+        expect(requiredDialog().querySelector('[data-type="action"]')).toBeNull();
+    });
+
+    it("开了加速时任何状态码的失败都多给一句提示", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error"});
         open({settings: settings({preferredSource: "commits", githubAcceleration: true})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
             .toBe("GitHub 加速服务可能不支持获取选定版本范围的提交");
+        expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
-    it("没开加速时的 403 不加那句提示", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error", forbidden: true});
-        open({settings: settings({preferredSource: "commits"})});
+    it("没开加速时不加那句提示", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error"});
+        open({settings: settings({preferredSource: "commits", githubAcceleration: false})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")).toBeNull();
+        expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
     it("超时给出「重新获取」", async () => {
