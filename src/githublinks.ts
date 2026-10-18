@@ -1,6 +1,21 @@
 /** 仓库网页地址；弹窗里所有「去 GitHub 看」的地址都从这里拼。 */
 export const repoWebURL = (repo: string): string => `https://github.com/${repo}`;
 
+/** 发行版页面；`tag` 为空时是 releases 列表。 */
+export const releaseURL = (repo: string, tag: string): string =>
+    tag ? `${repoWebURL(repo)}/releases/tag/${encodeURIComponent(tag)}` : `${repoWebURL(repo)}/releases`;
+
+/** 仓库里的文件。用 HEAD 当 ref，与取 CHANGELOG 时同一个写法，GitHub 会解析到默认分支。 */
+export const blobURL = (repo: string, path: string): string => `${repoWebURL(repo)}/blob/HEAD/${path}`;
+
+/** 两个端点之间的提交对比。 */
+export const compareWebURL = (repo: string, base: string, head: string): string =>
+    `${repoWebURL(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
+
+/** 某个端点上的提交列表；`ref` 为空时是默认分支。 */
+export const commitsURL = (repo: string, ref: string): string =>
+    ref && ref !== "HEAD" ? `${repoWebURL(repo)}/commits/${encodeURIComponent(ref)}` : `${repoWebURL(repo)}/commits`;
+
 /** 弹窗里可以就地切换过去的目标。 */
 export type TGithubLink =
     /** 仓库里的 changelog 文件：切到 CHANGELOG 来源。 */

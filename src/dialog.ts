@@ -3,7 +3,7 @@ import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
-import {classifyGitHubLink, repoWebURL} from "./githublinks";
+import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
 import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
 import type {IRelease} from "./github";
 import {t} from "./i18n";
@@ -52,6 +52,22 @@ const ensureOption = (select: HTMLSelectElement, value: string) => {
     select.append(option);
 };
 
+/**
+ * 把下拉的宽度定成「当前选中项的文字 + 原生内边距」。
+ * 浏览器是按最长的那个选项给宽度的，选中短的一项时右边会空出一大截；来源下拉因此在切换后重算。
+ */
+const fitSelectWidth = (select: HTMLSelectElement) => {
+    const text = select.selectedOptions[0]?.textContent || "";
+    const style = getComputedStyle(select);
+    const context = document.createElement("canvas").getContext("2d");
+    if (!text || !context) {
+        return;
+    }
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    select.style.width = `${Math.ceil(context.measureText(text).width + padding)}px`;
+};
+
 const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => {
     const i18n = options.i18n;
     const isMobile = ["mobile", "browser-mobile"].includes(getFrontend());
@@ -67,6 +83,8 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     let releaseStatus: "ok" | "missing" | "timeout" | "error" | undefined;
     /** 起始/终止版本下拉是否已经按默认值填过，用户选过之后就不再抢他的选择。 */
     let rangeInitialized = false;
+    /** CHANGELOG 命中的文件路径；拿到之前「在 GitHub 中打开」没有地址可用。 */
+    let changelogPath = "";
     /** 从只有 Full Changelog 链接的发行说明里读出的范围，切到提交记录时优先用它。 */
     let pendingRange: {base: string, head: string} | undefined;
     /** 用户点的是某个发行版链接：切到发行说明后选中它。 */
@@ -99,12 +117,15 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         ${SOURCES.map(([value, key]) =>
             `<option value="${value}">${escapeHTML(t(i18n, key))}</option>`).join("")}
     </select>
-    <span class="${CLASS}__label" data-type="version-label">${escapeHTML(t(i18n, "version"))}</span>
-    <select class="b3-select ${CLASS}__select" data-type="version"></select>
-    <span class="${CLASS}__label fn__none" data-type="from-label">${escapeHTML(t(i18n, "fromVersion"))}</span>
-    <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="from"></select>
-    <span class="${CLASS}__label fn__none" data-type="to-label">${escapeHTML(t(i18n, "toVersion"))}</span>
-    <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="to"></select>
+    <div class="${CLASS}__controls">
+        <span class="${CLASS}__label" data-type="version-label">${escapeHTML(t(i18n, "version"))}</span>
+        <select class="b3-select ${CLASS}__select" data-type="version"></select>
+        <span class="${CLASS}__label fn__none" data-type="from-label">${escapeHTML(t(i18n, "fromVersion"))}</span>
+        <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="from"></select>
+        <span class="${CLASS}__label fn__none" data-type="to-label">${escapeHTML(t(i18n, "toVersion"))}</span>
+        <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="to"></select>
+        <button type="button" class="b3-button b3-button--cancel b3-button--icon ${CLASS}__open ariaLabel" data-position="north" data-type="open" aria-label="${escapeHTML(t(i18n, "openInGithub"))}"><svg><use xlink:href="#iconGlobe"></use></svg></button>
+    </div>
 </div>
 <div class="${CLASS}__body b3-typography">${escapeHTML(t(i18n, "loading"))}</div>
 <div class="b3-dialog__action">
@@ -133,6 +154,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const fromElement = pick<HTMLSelectElement>("from");
     const toLabelElement = pick<HTMLElement>("to-label");
     const toElement = pick<HTMLSelectElement>("to");
+    const openElement = pick<HTMLButtonElement>("open");
 
     (dialog.element.querySelector('[data-type="close"]') as HTMLElement).addEventListener("click", () => {
         dialog.destroy();
@@ -218,6 +240,33 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         toElement.classList.toggle("fn__none", !range);
     };
     const isStale = (token: number) => destroyed || token !== requestID;
+
+    /** 当前来源在 GitHub 上对应的地址；没有可跳的位置时返回空串，按钮置灰。 */
+    const openTarget = (): string => {
+        const source = sourceElement.value as TChangelogSource;
+        if (source === "changelog") {
+            return changelogPath ? blobURL(repo, changelogPath) : "";
+        }
+        if (source === "commits") {
+            const base = fromElement.value;
+            const head = toElement.value;
+            return base ? compareWebURL(repo, base, head) : commitsURL(repo, head);
+        }
+        return releaseURL(repo, versionElement.value);
+    };
+    const syncOpenButton = () => {
+        const target = openTarget();
+        openElement.disabled = target === "";
+        debug("dialog: the open-on-GitHub target", {target, disabled: openElement.disabled});
+    };
+    openElement.addEventListener("click", () => {
+        const target = openTarget();
+        if (!target) {
+            return;
+        }
+        debug("dialog: opening on GitHub", {target});
+        window.open(target, "_blank", "noopener,noreferrer");
+    });
 
     /** 集市索引里的版本才算已知最新，GitHub 上比它新的发行版暂不显示。 */
     const keepKnown = (list: IRelease[]): IRelease[] =>
@@ -377,6 +426,8 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         if (isStale(token)) {
             return;
         }
+        changelogPath = result.path;
+        syncOpenButton();
         if (!applyMarkdownHTML(bodyElement, html, `${repoWebURL(repo)}/blob/HEAD/`)) {
             if (!offerCommits()) {
                 setBody(t(i18n, "changelogMissing"));
@@ -449,6 +500,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             versionElement.value = version;
             debug("release notes: version handed over by the caller", {tag: version});
         }
+        syncOpenButton();
         await showRelease(token, versionElement.value);
     };
 
@@ -472,6 +524,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             pendingRange = undefined;
         }
         const range = {base: fromElement.value, head: toElement.value};
+        syncOpenButton();
         debug(`commits: loading for ${repo}`, {range, timeoutMs});
         const result = await fetchCommits(repo, range, options.settings, timeoutMs);
         if (isStale(token)) {
@@ -582,6 +635,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
 
     const startSource = (token: number, autoSwitch: boolean) => {
         const source = sourceElement.value as TChangelogSource;
+        syncOpenButton();
         if (source === "commits") {
             void loadCommits(token);
         } else if (source === "changelog") {
@@ -598,10 +652,12 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
 
     sourceElement.addEventListener("change", () => {
         debug("dialog: source changed", {source: sourceElement.value});
+        fitSelectWidth(sourceElement);
         startSource(++requestID, false);
     });
     versionElement.addEventListener("change", () => {
         debug("dialog: version changed", {tag: versionElement.value});
+        syncOpenButton();
         void showRelease(requestID, versionElement.value);
     });
     const onRangeChange = () => {
@@ -649,6 +705,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     bodyElement.addEventListener("click", onBodyClick);
 
     sourceElement.value = options.settings.preferredSource;
+    fitSelectWidth(sourceElement);
     startSource(++requestID, true);
 };
 

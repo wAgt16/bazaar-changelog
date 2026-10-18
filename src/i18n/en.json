@@ -8,6 +8,7 @@
   "fromVersion": "From",
   "toVersion": "To",
   "fromAnyVersion": "Any",
+  "openInGithub": "Open on GitHub",
   "latest": "Latest",
   "loading": "Loading…",
   "close": "Close",

@@ -33,6 +33,10 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 - **#PR / issue numbers and @user become GitHub links**: `#123`, `owner/repo#123` and `@user` in
   release notes, the CHANGELOG and commits are rendered as links (cross-repository references point at
   their own repository), and bare URLs become clickable too; this can be turned off in the settings.
+- **Open on GitHub**: the icon button at the end of the source/version row opens whatever the dialog is
+  showing on GitHub — the release page for release notes, the file that was actually found for the
+  CHANGELOG, the `a...b` compare page for commits (the endpoint's commit list when the start is "Any").
+  The button is disabled while there is no address to open.
 - **Links inside the dialog switch sources instead of leaving it**: a link to this repository's
   changelog file, a release page (`/releases/tag/...`) or a commit comparison (`/compare/a...b`) switches
   to that source with the version or range preselected; this works in release notes, the CHANGELOG and

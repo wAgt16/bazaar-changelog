@@ -8,6 +8,7 @@
   "fromVersion": "起始版本",
   "toVersion": "终止版本",
   "fromAnyVersion": "不限",
+  "openInGithub": "在 GitHub 中打开",
   "latest": "最新",
   "loading": "加载中…",
   "close": "关闭",

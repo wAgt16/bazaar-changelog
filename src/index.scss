@@ -16,24 +16,57 @@
     padding: 12px 24px;
   }
 
+  // 窄屏放不下「来源」和「版本 + 起止下拉 + 打开按钮」两段，间距与内边距都收一收，
+  // 好让起始/终止版本的文字、两个下拉和打开按钮落在同一行
+  @media (max-width: 560px) {
+    &__head {
+      gap: 4px;
+      padding: 12px;
+    }
+  }
+
+  // 版本下拉与起止下拉同处一组：空间不够时整组换行，
+  // 不会出现「起始版本」留在上一行、它的下拉掉到下一行
+  &__controls {
+    align-items: center;
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-width: 0;
+
+    @media (max-width: 560px) {
+      gap: 4px;
+    }
+  }
+
   &__label {
     color: var(--b3-theme-on-surface);
     flex: 0 0 auto;
   }
 
   &__select {
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
   }
 
-  // 来源只有三项，按内容宽度即可；剩余空间留给版本列表
+  // 来源下拉的宽度由 JS 按当前选中项的文字量出来写成行内宽度；
+  // 浏览器默认按最长的那个选项给宽度，选中较短的一项时右边会空出一大截
   &__select--source {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
   }
 
-  // 提交记录有两个下拉，平分剩下的宽度
+  // 起止版本写的是同一个格式，留得下「xx.yy.zz」就够了：8 个字形里有两个是更窄的小数点，
+  // 折算成 ch 约 7 个字宽，再加思源原生下拉自带的内边距（左 8px、右 26px 给箭头）。
+  // 允许收缩，窄屏上宁可截断文字也不要挤出容器。
   &__select--range {
-    flex: 1 1 8em;
+    flex: 0 1 auto;
+    width: calc(7ch + 34px);
+  }
+
+  // 「在 GitHub 中打开」：跟在最后一个下拉后面，宽度按图标来
+  &__open {
+    flex: 0 0 auto;
   }
 
   &__body {
