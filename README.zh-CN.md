@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-思源笔记插件：把集市包的 GitHub 发行说明与仓库 CHANGELOG 做成思源原生的「更新日志」弹窗，
+思源笔记插件：把集市包的 GitHub 发行说明、仓库 CHANGELOG 与提交记录做成思源原生的「更新日志」弹窗，
 并用同一个弹窗来确认集市包更新。
 
 ![预览图](https://gcore.jsdelivr.net/gh/wmy2981/bazaar-changelog@dev/assets/preview.png)
@@ -37,7 +37,7 @@
 - **可填 GitHub 令牌**：设置里填个人访问令牌，发行说明与提交记录改用你自己的额度，不再撞匿名接口
   每小时约 60 次的限流；令牌只随发往 `api.github.com` 的请求发送。
 - **GitHub 加速开关**：默认分别直连 `api.github.com` 与 `raw.githubusercontent.com`，需要时在插件
-  设置里手动填一个加速地址并打开开关，发行说明与 CHANGELOG 的请求都会改走它。
+  设置里手动填一个加速地址并打开开关，发行说明、CHANGELOG 与提交记录的请求都会改走它。
 
 ## 设置
 
@@ -46,8 +46,8 @@
 | 优先加载 | 发行说明 | 打开更新日志弹窗时默认显示哪一种来源（发行说明 / CHANGELOG / 提交记录）。 |
 | 识别空发行说明 | 开启 | 正文只有一行 `Full Changelog: v1.0.1...v1.0.2` 链接的发行说明按「该版本没有发行说明」处理，打开时直接看这段范围的提交记录。 |
 | 链接化引用 | 开启 | 把 `#123`、`owner/repo#123` 与 `@user` 渲染成指向 GitHub 的链接。 |
-| GitHub 加速 | 关闭 | 关闭时发行说明直连 `api.github.com`，CHANGELOG 直连 `raw.githubusercontent.com`。 |
-| 加速地址 | 空 | 前缀式反代地址，例如 `https://gh-proxy.com/` 。开启加速且地址是 http(s) 时，发行说明与 CHANGELOG 请求都会拼在它后面。 |
+| GitHub 加速 | 关闭 | 关闭时发行说明与提交记录直连 `api.github.com`，CHANGELOG 直连 `raw.githubusercontent.com`。 |
+| 加速地址 | 空 | 前缀式反代地址，例如 `https://gh-proxy.com/` 。开启加速且地址是 http(s) 时，发行说明、CHANGELOG 与提交记录的请求都会拼在它后面。 |
 | GitHub 令牌 | 空 | 个人访问令牌（PAT），提高 `api.github.com` 的额度。加密后存在插件私有存储里（钥匙另存一个文件），只随发往 `api.github.com` 的请求发送；开启加速时请求由第三方反代转发，不带令牌。 |
 | 调试模式 | 关闭 | 在控制台输出本插件的完整过程日志（请求地址、耗时、版本过滤、回退原因等），前缀为 `[bazaar-changelog]`。 |
 
@@ -84,7 +84,7 @@
 - 更新确认弹窗依赖思源集市自己的更新流程；若思源改了集市结构，插件会在控制台留一条警告，
   此时更新按钮不再被替换，也不会自己造一套更新流程。
 - 弹窗里的代码块按纯文本渲染，不做语法高亮。
-- GitHub 加速对发行说明与 CHANGELOG 都生效；关闭时两者分别直连 `api.github.com` 与
+- GitHub 加速对发行说明、CHANGELOG 与提交记录都生效；关闭时它们分别直连 `api.github.com` 与
   `raw.githubusercontent.com`，这两个域名在大陆都可能不可达。
 - CHANGELOG 只有这一个入口，没有第二个 CDN 兜底：拿不到时会提示超时并给「重新获取」。
 
