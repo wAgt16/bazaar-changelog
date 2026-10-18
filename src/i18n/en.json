@@ -45,7 +45,6 @@
   "githubToken": "GitHub token",
   "githubTokenTip": "The token is stored encrypted in the plugin's private storage and is only sent with requests to api.github.com; with GitHub acceleration on, requests are relayed by a third-party proxy and carry no token. Create one in <a href=\"https://github.com/settings/tokens\" target=\"_blank\" rel=\"noopener noreferrer\">GitHub's Developer settings</a>; reading public repositories only needs read-only access.",
   "tokenNeedsSecureContext": "This context has no Web Crypto, so the token cannot be stored encrypted; use the desktop app or https.",
-  "githubAccelerationAutoEnabled": "GitHub is unreachable from the current network, so GitHub acceleration was enabled automatically. Turn it off on this plugin's settings page if you do not need it",
   "debugMode": "Debug mode",
   "debugModeTip": "Print complete plugin logs to the console."
 }

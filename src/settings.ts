@@ -19,7 +19,7 @@ export interface ISettings {
 export const DEFAULT_SETTINGS: ISettings = {
     preferredSource: "releaseNotes",
     githubAcceleration: false,
-    githubAccelerationURL: "https://gh-proxy.com/",
+    githubAccelerationURL: "",
     botReleaseNotesAsEmpty: true,
     githubReferences: true,
     debug: false,

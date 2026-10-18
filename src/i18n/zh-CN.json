@@ -45,7 +45,6 @@
   "githubToken": "GitHub 令牌",
   "githubTokenTip": "令牌加密后存在插件私有存储里，只随发往 api.github.com 的请求发送；开启 GitHub 加速时请求由第三方反代转发，不带令牌。可在 <a href=\"https://github.com/settings/tokens\" target=\"_blank\" rel=\"noopener noreferrer\">GitHub 的 Developer settings</a> 里生成，读取公开仓库只需只读权限",
   "tokenNeedsSecureContext": "当前访问方式不支持 Web Crypto，令牌无法加密保存；请用桌面端或 https 访问",
-  "githubAccelerationAutoEnabled": "当前网络环境访问 GitHub 失败，已自动启用 GitHub 加速。若不需要，请在本插件设置页关闭",
   "debugMode": "调试模式",
   "debugModeTip": "在控制台输出本插件的完整过程日志"
 }

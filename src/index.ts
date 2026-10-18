@@ -1,6 +1,5 @@
 import {Plugin, Setting, showMessage} from "siyuan";
 import {observeBazaarReadme} from "./bazaarDom";
-import {probeGithub} from "./github";
 import type {TI18n} from "./i18n";
 import {t} from "./i18n";
 import "./index.scss";
@@ -15,17 +14,6 @@ const STORAGE_NAME = "settings";
 /** 令牌与它的钥匙分开存：设置文件被单独贴出来时不会连带泄漏令牌。 */
 const TOKEN_STORAGE_NAME = "githubToken";
 const TOKEN_KEY_STORAGE_NAME = "githubTokenKey";
-/**
- * 「探测过没有」单独存一个键：设置面板落盘的是整份设置对象，把探测标记塞进去的话，
- * 面板一次确认就会把它按默认值冲掉，于是每次启动都重新探测。
- */
-const PROBE_STORAGE_NAME = "githubProbe";
-/** 探测用本仓库 README 的直连地址，故意不过加速：要测的就是直连这条路。 */
-const PROBE_URL = "https://raw.githubusercontent.com/wmy2981/bazaar-changelog/HEAD/README.md";
-/** 探测超时比弹窗宽：慢线路首次握手就可能超过弹窗那 3 秒，误判会白开加速。 */
-const PROBE_TIMEOUT = 5000;
-/** 这条提示说了设置被改过，给用户留出读完的时间。 */
-const TOAST_TIMEOUT = 10000;
 
 export default class ReleaseNotePlugin extends Plugin {
     private settings: ISettings = {...DEFAULT_SETTINGS};
@@ -43,13 +31,6 @@ export default class ReleaseNotePlugin extends Plugin {
     override async onload() {
         const saved = await this.loadData(STORAGE_NAME).catch(() => undefined);
         this.settings = mergeSettings(saved);
-        // 旧版本的默认地址是空串，升级上来的用户盘里可能存着它：补上现在的默认地址，
-        // 开关状态与其他设置一律不动（新装不会走到这里，它的默认值本来就非空）
-        if (!this.settings.githubAccelerationURL) {
-            debug("settings: filling the empty acceleration URL with the default");
-            this.settings.githubAccelerationURL = DEFAULT_SETTINGS.githubAccelerationURL;
-            await this.persistSettings(this.settings);
-        }
         setDebugEnabled(this.settings.debug);
         // 令牌要在设置面板建出来之前解好，输入框才有值可填
         await this.loadToken();
@@ -152,8 +133,6 @@ export default class ReleaseNotePlugin extends Plugin {
             observeBazaarReadme(this.texts, () => this.settings),
         );
         debug("onload: bazaar readme observer and update interception are attached");
-        // 不 await：探测最长 5 秒，不能拖着插件加载
-        void this.probeGithubOnce(saved);
     }
 
     override onunload() {
@@ -164,11 +143,11 @@ export default class ReleaseNotePlugin extends Plugin {
     /**
      * 卸载时清掉插件私有存储。思源卸载只删 `data/plugins/<name>`、集市包信息和发布数据，
      * `data/storage/petal/<name>` 是留着的（集市详情里那个「打开存储位置」就是给你去删它），
-     * 不自己清的话，下次装回来会读到上一轮留下的设置与探测标记。禁用/重载不会走到这里，
-     * 数据照旧保留。
+     * 不自己清的话，下次装回来会读到上一轮留下的设置。禁用/重载不会走到这里，数据照旧保留。
      */
     override async uninstall() {
-        for (const name of [STORAGE_NAME, PROBE_STORAGE_NAME, TOKEN_STORAGE_NAME, TOKEN_KEY_STORAGE_NAME]) {
+        // githubProbe 是已移除的「首次启动探测加速」留下的标记，老用户盘里可能还有，一并清掉
+        for (const name of [STORAGE_NAME, "githubProbe", TOKEN_STORAGE_NAME, TOKEN_KEY_STORAGE_NAME]) {
             try {
                 const response = await this.removeData(name) as {code?: number, msg?: string} | undefined;
                 // 404 是这个文件本来就没写过，不算失败；其余非 0 都要留下痕迹
@@ -216,41 +195,6 @@ export default class ReleaseNotePlugin extends Plugin {
         setTimeout(() => {
             element.removeAttribute("readonly");
         }, 0);
-    }
-
-    /**
-     * 新装后的唯一一次连通性探测：直连不通就自动打开 GitHub 加速并提示用户。
-     * 只有「一份设置都没有落盘过」才算新装，升级上来的用户不打扰；探测结果另存一个标记，
-     * 这样即使用户从不打开设置面板，也不会每次启动都重新探测、重复弹提示。
-     */
-    private async probeGithubOnce(saved: unknown) {
-        if (typeof saved === "object" && saved !== null) {
-            debug("probe: skipped, settings are already stored");
-            return;
-        }
-        // 读不到标记时当成「已经探过」：宁可漏探，也不要因为读失败反复弹提示
-        if (await this.loadData(PROBE_STORAGE_NAME).catch(() => true)) {
-            debug("probe: skipped, already probed");
-            return;
-        }
-        // 标记先落盘，探测中途出意外也不会每次启动重来；万一写失败，代价只是下次再探一遍
-        await this.saveData(PROBE_STORAGE_NAME, true).catch(() => undefined);
-        if (await probeGithub(PROBE_URL, PROBE_TIMEOUT)) {
-            return;
-        }
-        debug("probe: GitHub is unreachable, enabling acceleration", {url: PROBE_URL});
-        this.settings.githubAcceleration = true;
-        // 默认地址就是 https://gh-proxy.com/，这里再写一次，免得这条行为依赖别处的默认值
-        this.settings.githubAccelerationURL = DEFAULT_SETTINGS.githubAccelerationURL;
-        if (!(await this.persistSettings(this.settings))) {
-            return;
-        }
-        this.syncSettingControls();
-        showMessage(
-            `[${this.displayName}] ${t(this.texts(), "githubAccelerationAutoEnabled")}`,
-            TOAST_TIMEOUT,
-            "error",
-        );
     }
 
     private async saveSettings() {
