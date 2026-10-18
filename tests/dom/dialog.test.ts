@@ -271,7 +271,7 @@ describe("CHANGELOG 来源", () => {
         expect(control("action").textContent).toBe("查看提交记录");
 
         click(control("action"));
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("source").value).toBe("commits");
     });
 });
@@ -285,7 +285,7 @@ describe("自动生成的空发行说明", () => {
             releases: [{tag: "v1.2.3", publishedAt: "2024-03-01T00:00:00Z", markdown: botNotes}],
         });
         open();
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(mocks.fetchCommits).toHaveBeenCalledWith(
             "owner/repo",
             {base: "v1.2.2", head: "v1.2.3"},
@@ -310,7 +310,7 @@ describe("自动生成的空发行说明", () => {
 describe("提交记录来源", () => {
     it("默认范围是本机已安装版本到集市最新版本", async () => {
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("from").value).toBe("v1.2.2");
         expect(control<HTMLSelectElement>("to").value).toBe("v1.2.3");
         expect(mocks.fetchCommits.mock.calls[0][1]).toEqual({base: "v1.2.2", head: "v1.2.3"});
@@ -318,20 +318,20 @@ describe("提交记录来源", () => {
 
     it("已安装版本与集市一致时退回上一个发行版", async () => {
         open({settings: settings({preferredSource: "commits"}), installedVersion: "1.2.3"});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("from").value).toBe("v1.2.2");
     });
 
     it("不知道已安装版本时同样退回上一个发行版", async () => {
         open({settings: settings({preferredSource: "commits"}), installedVersion: undefined});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("from").value).toBe("v1.2.2");
     });
 
     it("一个发行版都没有时起点为「不限」、终点为 HEAD", async () => {
         mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("from").value).toBe("");
         expect(control<HTMLSelectElement>("to").value).toBe("HEAD");
         expect(mocks.fetchCommits.mock.calls[0][1]).toEqual({base: "", head: "HEAD"});
@@ -358,7 +358,7 @@ describe("提交记录来源", () => {
 
         mocks.fetchCommits.mockResolvedValue({status: "ok", commits: commits(), total: 2});
         click(control("action"));
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("from").value).toBe("");
         expect(control<HTMLSelectElement>("to").value).toBe("HEAD");
         expect(mocks.fetchCommits.mock.calls[1][1]).toEqual({base: "", head: "HEAD"});
@@ -398,7 +398,7 @@ describe("提交记录来源", () => {
 
     it("一条提交一行：短哈希、首行信息、作者与日期", async () => {
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
 
         const rows = requiredDialog().querySelectorAll(".bazaar-release-notes__commit");
         expect(rows).toHaveLength(2);
@@ -412,7 +412,7 @@ describe("提交记录来源", () => {
 
     it("点一行展开完整提交信息，点里面的链接不展开", async () => {
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
         const detail = row.querySelector(".bazaar-release-notes__commit-detail") as HTMLElement;
         expect(detail.classList.contains("fn__none")).toBe(true);
@@ -445,15 +445,15 @@ describe("提交记录来源", () => {
     it("总数大于列出条数时，在数量后面补一句", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "ok", commits: commits(), total: 260});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 260 个提交（一次最多列出 2 个）");
+        await expectBody("列出 260 条提交（一次最多列出 2 条提交）");
         // 与数量同一行，不是列表下面的另一行
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
-            .toBe("共 260 个提交（一次最多列出 2 个）");
+            .toBe("列出 260 条提交（一次最多列出 2 条提交）");
     });
 
     it("改起止版本会重新取一次", async () => {
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         const from = control<HTMLSelectElement>("from");
         from.value = "v1.2.1";
         from.dispatchEvent(new Event("change"));
@@ -464,7 +464,7 @@ describe("提交记录来源", () => {
     it("打开按钮在起点为「不限」时指向该端点的提交列表", async () => {
         mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         click(control("open"));
         expect(window.open).toHaveBeenCalledWith(
             "https://github.com/owner/repo/commits",
@@ -497,7 +497,7 @@ describe("来源切换", () => {
             releases: [{tag: "v1.2.1", publishedAt: "2024-01-01T00:00:00Z", markdown: ""}],
         });
         open({version: "1.2.1", settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
 
         await switchTo("releaseNotes");
         await expectBody("该版本没有发行说明");
@@ -507,7 +507,7 @@ describe("来源切换", () => {
     it("一个发行版都没有时提示无法获取发行说明", async () => {
         mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
 
         await switchTo("releaseNotes");
         await expectBody("无法获取发行说明");
@@ -516,7 +516,7 @@ describe("来源切换", () => {
     it("CHANGELOG 没拿到时「在 GitHub 中打开」不可用", async () => {
         mocks.fetchChangelog.mockResolvedValue({status: "missing"});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
 
         await switchTo("changelog");
         await expectBody("这个仓库没有 CHANGELOG");
@@ -573,7 +573,7 @@ describe("正文里的链接", () => {
         await expectBody("对比");
 
         click(linkOf());
-        await expectBody("共 2 个提交");
+        await expectBody("列出 2 条提交");
         expect(control<HTMLSelectElement>("source").value).toBe("commits");
         expect(mocks.fetchCommits.mock.calls.at(-1)?.[1]).toEqual({base: "v1.0.0", head: "v1.1.0"});
     });

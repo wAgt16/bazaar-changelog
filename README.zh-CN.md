@@ -67,7 +67,7 @@
   用来判定「最新」以及过滤掉集市还没检索到的发行版。
 - **提交记录**：GitHub Compare API（`https://api.github.com/repos/<owner>/<repo>/compare/<base>...<head>`），
   起点选「不限」时改用 `/commits` 取该端点最近 100 条提交。列表一律按新的在前（这两个接口在 GitHub
-  那边的方向正好相反，插件统一过来）；compare 一次最多返回 250 条，超出时在「共 N 个提交」后面注明。
+  那边的方向正好相反，插件统一过来）；compare 一次最多返回 250 条，超出时在「列出 N 条提交」后面注明。
   同一仓库 30 分钟内只请求一次，超时同样可以「重新获取」；取不到时给一个「查看不限到 HEAD 的提交」
   的入口，改用 `/commits` 再试一次。
 - **Markdown 渲染**：内核 `/api/lute/md2html`，与思源集市 README 同一套 Lute，再用 DOMPurify 消毒。
