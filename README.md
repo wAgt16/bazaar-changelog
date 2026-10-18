@@ -78,9 +78,10 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   decides the "Latest" mark and filters out releases the bazaar index has not seen.
 - **Commits**: the GitHub Compare API
   (`https://api.github.com/repos/<owner>/<repo>/compare/<base>...<head>`); with the start version set
-  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Compare returns
-  at most 250 commits and the note under the list says so when that limit is hit. One request per
-  repository per 30 minutes, and a timeout can still be retried; when the request fails the dialog
+  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Commits are
+  always listed newest first (the two endpoints return opposite orders on GitHub's side). Compare returns
+  at most 250 commits and the note after the "N commits" count says so when that limit is hit. One request
+  per repository per 30 minutes, and a timeout can still be retried; when the request fails the dialog
   offers "List commits up to HEAD", which retries through `/commits`.
 - **Markdown rendering**: the kernel `/api/lute/md2html`, the same Lute pipeline the bazaar README
   uses, followed by DOMPurify.

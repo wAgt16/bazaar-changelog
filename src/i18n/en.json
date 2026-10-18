@@ -25,7 +25,7 @@
   "retry": "Retry",
   "viewCommits": "View commits",
   "commitsCount": "${count} commits",
-  "commitsTruncated": "Only the first ${count} commits are listed",
+  "commitsTruncated": " (at most ${count} listed)",
   "commitsEmpty": "No commits in this range",
   "commitsTimeout": "Timed out loading the commits",
   "commitsUnavailable": "Failed to load the commits",

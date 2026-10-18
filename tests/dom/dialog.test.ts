@@ -442,11 +442,13 @@ describe("提交记录来源", () => {
         expect(row?.querySelector(".b3-list-item__text")?.textContent).toBe("（无提交信息）");
     });
 
-    it("总数大于列出条数时说明只列了一部分", async () => {
+    it("总数大于列出条数时，在数量后面补一句", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "ok", commits: commits(), total: 260});
         open({settings: settings({preferredSource: "commits"})});
-        await expectBody("共 260 个提交");
-        expect(bodyText()).toContain("一次最多列出 2 个提交");
+        await expectBody("共 260 个提交（一次最多列出 2 个）");
+        // 与数量同一行，不是列表下面的另一行
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("共 260 个提交（一次最多列出 2 个）");
     });
 
     it("改起止版本会重新取一次", async () => {

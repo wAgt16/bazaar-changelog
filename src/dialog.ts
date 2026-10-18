@@ -629,20 +629,16 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const countElement = document.createElement("div");
         countElement.className = `${CLASS}__hint`;
         countElement.textContent = t(i18n, "commitsCount", {count: String(total)});
+        // compare 一次最多给 250 条：显示的总数比实际列出的多时，就在这一行后面补一句，
+        // 摆在列表下面得翻过几百行才看得见
+        if (total > commits.length) {
+            countElement.append(t(i18n, "commitsTruncated", {count: String(commits.length)}));
+        }
         // .b3-list--background 带来思源原生的行悬停底色与圆角
         const list = document.createElement("div");
         list.className = `b3-list b3-list--background ${CLASS}__commits`;
         commits.forEach((commit) => list.append(commitItem(commit)));
-        const fragment = document.createDocumentFragment();
-        fragment.append(countElement, list);
-        if (total > commits.length) {
-            // compare 最多给 250 条，剩下的让用户去 GitHub 看
-            const note = document.createElement("div");
-            note.className = `${CLASS}__hint`;
-            note.textContent = t(i18n, "commitsTruncated", {count: String(commits.length)});
-            fragment.append(note);
-        }
-        bodyElement.replaceChildren(fragment);
+        bodyElement.replaceChildren(countElement, list);
     };
 
     const startSource = (token: number, autoSwitch: boolean) => {

@@ -13,7 +13,7 @@ const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT
 
 const API = "https://api.github.com/repos/owner/repo";
 
-/** GitHub 的列表与 compare 接口都是旧的在前。 */
+/** compare 是旧的在前；列表接口是新的在前，两种顺序各按接口的真实样子摆。 */
 const rawCommits = [
     {
         sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -24,6 +24,7 @@ const rawCommits = [
         commit: {message: "second", author: {name: "Bob", date: "2024-02-02T10:00:00Z"}},
     },
 ];
+const rawList = [...rawCommits].reverse();
 
 beforeEach(async () => {
     vi.resetModules();
@@ -91,13 +92,22 @@ describe("fetchCommits 的响应", () => {
         });
     });
 
-    it("列表接口直接回数组也能用，total 取实际条数", async () => {
-        stubFetch(() => mockResponse(rawCommits));
+    it("列表接口本来就是新的在前，不再掉头，total 取实际条数", async () => {
+        stubFetch(() => mockResponse(rawList));
         const result = await commits.fetchCommits("owner/repo", {base: "", head: "HEAD"}, settings(), 3000);
         expect(result.status).toBe("ok");
         if (result.status === "ok") {
             expect(result.total).toBe(2);
-            expect(result.commits[0].sha).toBe("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+            expect(result.commits.map((commit) => commit.sha.slice(0, 7))).toEqual(["bbbbbbb", "aaaaaaa"]);
+        }
+    });
+
+    it("起点与终点相同时走的也是列表接口，同样不掉头", async () => {
+        stubFetch(() => mockResponse(rawList));
+        const result = await commits.fetchCommits("owner/repo", {base: "v1.0.0", head: "v1.0.0"}, settings(), 3000);
+        expect(result.status).toBe("ok");
+        if (result.status === "ok") {
+            expect(result.commits.map((commit) => commit.sha.slice(0, 7))).toEqual(["bbbbbbb", "aaaaaaa"]);
         }
     });
 
