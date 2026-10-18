@@ -3,7 +3,7 @@ import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
-import {fetchReleases, parseGithubRepo} from "./github";
+import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
 import type {IRelease} from "./github";
 import {t} from "./i18n";
 import type {TI18n} from "./i18n";
@@ -39,6 +39,17 @@ export interface IChangelogDialogOptions {
 /** 同一时刻只留一个更新日志弹窗：连着点两次不该叠出两个。 */
 let currentDialog: Dialog | undefined;
 
+/** 把下拉里没有的值补成一个选项，供「范围来自 Full Changelog 链接」这种外部取值使用。 */
+const ensureOption = (select: HTMLSelectElement, value: string) => {
+    if (!value || Array.from(select.options).some((option) => option.value === value)) {
+        return;
+    }
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.append(option);
+};
+
 const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => {
     const i18n = options.i18n;
     const isMobile = ["mobile", "browser-mobile"].includes(getFrontend());
@@ -54,6 +65,8 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     let releaseStatus: "ok" | "missing" | "timeout" | "error" | undefined;
     /** 起始/终止版本下拉是否已经按默认值填过，用户选过之后就不再抢他的选择。 */
     let rangeInitialized = false;
+    /** 从只有 Full Changelog 链接的发行说明里读出的范围，切到提交记录时优先用它。 */
+    let pendingRange: {base: string, head: string} | undefined;
     /**
      * 本次打开里已经确认「这个仓库没有 CHANGELOG」/「这一版没有发行说明」。
      * 只认确定性结论（404、该版本正文为空），超时不算；两个都为真时提示合成一句，
@@ -174,14 +187,16 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     /**
      * 「查看提交记录」只在这个仓库确实没有 CHANGELOG、且这一版确实没有发行说明时给：
      * 另一种来源还有正文可读时，把人引到提交记录只是绕远，那条路本来也在来源下拉里。
+     * `range` 是调用方已经知道的范围（例如自动生成的 Full Changelog 链接），切过去直接用它。
      * 返回是否给出了这个入口，调用方据此决定要不要换成普通提示。
      */
-    const offerCommits = (): boolean => {
+    const offerCommits = (range?: {base: string, head: string}): boolean => {
         if (!changelogMissing || !releaseNotesMissing) {
             return false;
         }
         setBodyWithAction(t(i18n, "bothSourcesMissing"), t(i18n, "viewCommits"), () => {
-            debug("dialog: switching to the commits for the missing content");
+            debug("dialog: switching to the commits for the missing content", {range});
+            pendingRange = range;
             switchSource("commits", ++requestID);
         });
         return true;
@@ -235,6 +250,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     /**
      * 提交记录的起止版本。默认「本机已安装的版本 → 集市最新版本」，两者相同或取不到时
      * 退回上一个发行版；一个发行版都没有时起点留空，直接列该端点最近的提交。
+     * 自动生成的那条 Full Changelog 给出的范围优先。
      */
     const fillRangeElements = () => {
         if (rangeInitialized) {
@@ -259,10 +275,17 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         debug("commits: range defaults", {
             tags: tags.length,
             installed: options.installedVersion || "(unknown)",
-            base: fromTag || "(none)",
-            head: marketTag,
+            base: fromElement.value || "(none)",
+            head: toElement.value,
         });
     };
+
+    /**
+     * 正文只有一行 Full Changelog 链接时（自动生成的发行说明），按「这一版没有发行说明」处理。
+     * 返回空表示这不是那种发行说明，或者用户把这个识别关掉了。
+     */
+    const botRangeOf = (markdown: string) =>
+        options.settings.botReleaseNotesAsEmpty ? parseFullChangelogOnly(markdown) : undefined;
 
     const showRelease = async (token: number, tag: string) => {
         const release = releases.find((item) => item.tag === tag) || releases[0];
@@ -271,12 +294,16 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             setBody(t(i18n, "releaseNotesUnavailable"));
             return;
         }
+        const botRange = botRangeOf(release.markdown);
         // 正在看的这一版有没有正文：下面据此决定要不要把用户引到提交记录
-        releaseNotesMissing = !release.markdown.trim();
+        releaseNotesMissing = !release.markdown.trim() || Boolean(botRange);
         if (releaseNotesMissing) {
-            debug(`release notes: ${release.tag} has an empty body`, {changelogMissing});
+            debug(`release notes: ${release.tag} has no content`, {
+                changelogMissing,
+                fullChangelogOnly: botRange,
+            });
             // 两种来源都没有内容时，才把提交记录摆到用户面前
-            if (!offerCommits()) {
+            if (!offerCommits(botRange)) {
                 setBody(t(i18n, "releaseNotesEmpty"));
             }
             return;
@@ -359,8 +386,10 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         }
         const matched = options.version ?
             releases.find((item) => isSameVersion(item.tag, options.version)) : releases[0];
+        // 自动生成的发行说明只有一行 Full Changelog 链接：等同于这一版没有内容，但它自带范围
+        const botRange = matched ? botRangeOf(matched.markdown) : undefined;
         // 这一版在列表里找不到，或者找到了但正文是空的：首次打开据此回退
-        const nothingForVersion = !matched || !matched.markdown.trim();
+        const nothingForVersion = !matched || !matched.markdown.trim() || Boolean(botRange);
         // 但接口出错时的空列表只说明这次没拿到，不能替用户断言「这一版没有发行说明」；
         // 拿到列表才更新这个结论，出错时保留上一次的确定性结果
         if (releaseStatus !== "error") {
@@ -371,8 +400,16 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             matched: matched?.tag,
             nothingForVersion,
             missing: releaseNotesMissing,
+            fullChangelogOnly: botRange,
         });
         if (autoSwitch && nothingForVersion) {
+            if (botRange) {
+                // 只有 Full Changelog 链接时直接去看它指向的那段提交，比空提示有用
+                debug("release notes: only a Full Changelog link, showing its commit range instead", botRange);
+                pendingRange = botRange;
+                switchSource("commits", token);
+                return;
+            }
             debug("release notes: nothing for the bazaar version, falling back to the CHANGELOG");
             await loadChangelog(token, false);
             return;
@@ -397,6 +434,15 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         fillRangeElements();
+        if (pendingRange) {
+            // 这两个版本不一定在发行版下拉里，补上再选；只影响这一次请求
+            ensureOption(fromElement, pendingRange.base);
+            ensureOption(toElement, pendingRange.head);
+            fromElement.value = pendingRange.base;
+            toElement.value = pendingRange.head;
+            debug("commits: range handed over by the caller", pendingRange);
+            pendingRange = undefined;
+        }
         const range = {base: fromElement.value, head: toElement.value};
         debug(`commits: loading for ${repo}`, {range, timeoutMs});
         const result = await fetchCommits(repo, range, options.settings, timeoutMs);

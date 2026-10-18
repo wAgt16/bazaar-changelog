@@ -8,6 +8,34 @@ export interface IRelease {
     markdown: string;
 }
 
+/**
+ * 自动生成的发行说明正文只有一行 `**Full Changelog**: https://github.com/o/r/compare/a...b`。
+ * 它没有任何内容，却会让「这一版没有发行说明」的回退判断失效，所以单独认出来。
+ */
+const FULL_CHANGELOG_LINE =
+    /^\**\s*Full Changelog\s*\**\s*:?\s*<?https?:\/\/github\.com\/[^/\s]+\/[^/\s]+\/compare\/(\S+?)\.\.\.(\S+?)>?\s*$/i;
+
+/**
+ * 正文是否只有 Full Changelog 链接。是的话返回它指向的那段范围，调用方可以直接拿去看提交记录。
+ * 只要有一行别的内容就不算 —— 手工写的发行说明不该被当成空的。
+ */
+export const parseFullChangelogOnly = (markdown: string): {base: string, head: string} | undefined => {
+    // GitHub 自动生成时可能带上注释，注释不算内容
+    const lines = markdown.replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    if (lines.length !== 1) {
+        return undefined;
+    }
+    const matched = FULL_CHANGELOG_LINE.exec(lines[0]);
+    if (!matched) {
+        return undefined;
+    }
+    const base = decodeURIComponent(matched[1]);
+    const head = decodeURIComponent(matched[2]);
+    return base && head ? {base, head} : undefined;
+};
+
 /** 默认（也是唯一内置的）API 地址；要加速只能在设置里手动加前缀。 */
 const RELEASES_API = "https://api.github.com";
 /** 集市索引本身 1-3 小时才更新一次，半小时内不重复打 GitHub 接口。 */

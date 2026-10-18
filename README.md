@@ -27,6 +27,9 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
   per row with its 7-character short hash: the hash opens the commit on GitHub, and clicking the message
   expands the full commit message in place (changed files are not listed). When neither release notes
   nor the CHANGELOG has content, the hint also offers a "View commits" entry.
+- **Auto-generated release notes count as "no release notes"**: when the body is only a
+  `Full Changelog: v1.0.1...v1.0.2` link (usually generated), the dialog opens the commit range it
+  points to instead; a hand-written note with one more line is left alone.
 - **GitHub acceleration switch**: off by default, so `api.github.com` and
   `raw.githubusercontent.com` are requested directly. Turn it on and fill in one acceleration URL
   when you need it; both release notes and CHANGELOG requests then go through it.
@@ -36,6 +39,7 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 | Setting | Default | Description |
 | --- | --- | --- |
 | Preferred source | Release notes | Which source the changelog dialog opens with (release notes / CHANGELOG / commits). |
+| Skip empty release notes | On | Release notes whose only line is a `Full Changelog: v1.0.1...v1.0.2` link count as no release notes, and the dialog opens that commit range instead. |
 | GitHub acceleration | Off | When off, release notes reach `api.github.com` and the CHANGELOG reaches `raw.githubusercontent.com` directly. |
 | Acceleration URL | Empty | A prefix proxy such as `https://gh-proxy.com/` . With acceleration on and an http(s) URL set, both release notes and CHANGELOG requests are prepended with it. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |

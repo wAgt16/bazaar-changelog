@@ -33,6 +33,8 @@
   "packageUnavailable": "Failed to load the bazaar package info",
   "preferredSource": "Preferred source",
   "preferredSourceTip": "Which source the changelog dialog opens with. Release notes are listed per version; CHANGELOG reads the CHANGELOG.md file in the repository; commits are the range between two versions. If the preferred one is unavailable, this open switches to the next one.",
+  "botReleaseNotes": "Skip empty release notes",
+  "botReleaseNotesTip": "Release notes whose only line is a \"Full Changelog: v1.0.1...v1.0.2\" link (usually auto-generated) count as no release notes; the dialog opens the commit range they point to instead.",
   "githubAcceleration": "GitHub acceleration",
   "githubAccelerationTip": "When off, only api.github.com and raw.githubusercontent.com are requested. When on, both release notes and CHANGELOG requests go through the acceleration URL below.",
   "githubAccelerationURL": "Acceleration URL",
