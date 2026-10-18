@@ -135,7 +135,11 @@ export default class ReleaseNotePlugin extends Plugin {
     private createSourceElement(): HTMLSelectElement {
         const element = document.createElement("select");
         element.className = "b3-select fn__block";
-        for (const [value, key] of [["releaseNotes", "releaseNotes"], ["changelog", "changelogFile"]] as const) {
+        for (const [value, key] of [
+            ["releaseNotes", "releaseNotes"],
+            ["changelog", "changelogFile"],
+            ["commits", "commits"],
+        ] as const) {
             const option = document.createElement("option");
             option.value = value;
             option.textContent = t(this.texts(), key);

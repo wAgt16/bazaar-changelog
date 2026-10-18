@@ -1,5 +1,5 @@
-/** 弹窗的两种来源。 */
-export type TChangelogSource = "releaseNotes" | "changelog";
+/** 弹窗的三种来源。 */
+export type TChangelogSource = "releaseNotes" | "changelog" | "commits";
 
 export interface ISettings {
     /** 打开更新日志弹窗时默认显示哪一种来源。 */
@@ -23,8 +23,9 @@ export const DEFAULT_SETTINGS: ISettings = {
 export const mergeSettings = (saved: unknown): ISettings => {
     const value = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
     const url = value.githubAccelerationURL;
+    const source = value.preferredSource;
     return {
-        preferredSource: value.preferredSource === "changelog" ? "changelog" : "releaseNotes",
+        preferredSource: source === "changelog" || source === "commits" ? source : "releaseNotes",
         githubAcceleration: value.githubAcceleration === true,
         githubAccelerationURL: typeof url === "string" ? url.trim() : DEFAULT_SETTINGS.githubAccelerationURL,
         debug: value.debug === true,

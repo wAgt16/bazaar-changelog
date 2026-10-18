@@ -14,14 +14,19 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 - **Updates are confirmed in the changelog dialog**: Settings → Bazaar → Downloaded → Update, or the
   Update button on a package detail page. The update starts only after you confirm; SiYuan's own
   download progress, list refresh and error messages are unchanged.
-- **Pick the source at the top of the dialog**: release notes (listed per version, switchable) or the
-  repository CHANGELOG (one file, not per version).
+- **Pick the source at the top of the dialog**: release notes (listed per version, switchable), the
+  repository CHANGELOG (one file, not per version), or commits (the range between two versions).
 - **"Latest" follows the bazaar**: only the version the bazaar index has seen counts as latest;
   releases that are newer on GitHub are not listed yet.
 - **Falls back to the other source when one is missing**: if the bazaar version has no release notes
   at the moment you open the dialog, this open switches to the CHANGELOG; when the CHANGELOG is the
   preferred source but the repository has none, it switches back to the release notes. The next open
   follows the preferred source again.
+- **Commits default to "installed version → bazaar latest"**: the start and end versions can be changed
+  in the dialog; with the start set to "Any" the newest commits of that endpoint are listed. One commit
+  per row with its 7-character short hash: the hash opens the commit on GitHub, and clicking the message
+  expands the full commit message in place (changed files are not listed). When neither release notes
+  nor the CHANGELOG has content, the hint also offers a "View commits" entry.
 - **GitHub acceleration switch**: off by default, so `api.github.com` and
   `raw.githubusercontent.com` are requested directly. Turn it on and fill in one acceleration URL
   when you need it; both release notes and CHANGELOG requests then go through it.
@@ -30,7 +35,7 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Preferred source | Release notes | Which source the changelog dialog opens with. |
+| Preferred source | Release notes | Which source the changelog dialog opens with (release notes / CHANGELOG / commits). |
 | GitHub acceleration | Off | When off, release notes reach `api.github.com` and the CHANGELOG reaches `raw.githubusercontent.com` directly. |
 | Acceleration URL | Empty | A prefix proxy such as `https://gh-proxy.com/` . With acceleration on and an http(s) URL set, both release notes and CHANGELOG requests are prepended with it. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |
@@ -52,14 +57,24 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
   own, because a slow route would be just as slow for the other source.
 - **Bazaar latest version**: `available.version` from the kernel `/api/bazaar/getBazaarPackage`. It
   decides the "Latest" mark and filters out releases the bazaar index has not seen.
+- **Commits**: the GitHub Compare API
+  (`https://api.github.com/repos/<owner>/<repo>/compare/<base>...<head>`); with the start version set
+  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Compare returns
+  at most 250 commits and the note under the list says so when that limit is hit. One request per
+  repository per 30 minutes, and a timeout can still be retried.
 - **Markdown rendering**: the kernel `/api/lute/md2html`, the same Lute pipeline the bazaar README
   uses, followed by DOMPurify.
 
 ## Known limitations
 
 - Only GitHub-hosted bazaar packages are supported (the SiYuan bazaar only indexes GitHub repositories).
-- Release notes use GitHub's anonymous API, roughly 60 requests per hour per IP. When that is
-  exhausted the dialog says the release notes are unavailable.
+- Release notes and commits use GitHub's anonymous API, roughly 60 requests per hour per IP. When that
+  is exhausted the dialog says they are unavailable.
+- A commit list shows at most 250 commits (the compare API limit); older commits have to be looked at
+  on GitHub.
+- With GitHub acceleration on, some proxies do not forward the `compare` endpoint (403), so the commit
+  list cannot be loaded; the dialog says "The GitHub acceleration service may not support fetching
+  commits for the selected range" — turn acceleration off to read them directly.
 - Both the "Latest" mark and the version filter depend on the bazaar index, which refreshes every
   1–3 hours.
 - Update confirmation relies on SiYuan's own bazaar update flow. If SiYuan changes that flow the

@@ -40,6 +40,24 @@ export const findMarketVersionValue = (side: HTMLElement): Element | undefined =
 export const marketVersion = (side: HTMLElement): string =>
     label(findMarketVersionValue(side)).replace(/^v/i, "");
 
+/**
+ * 侧栏「安装信息」里的版本号，即本机已安装的版本；没装过这个包时返回空串。
+ * 与集市信息一样先按标题定位，取不到再退回「同一分组里含『安装日期』的那一行」。
+ */
+export const installedVersion = (side: HTMLElement): string => {
+    const languages = window.siyuan.languages || {};
+    const sections = Array.from(side.querySelectorAll<HTMLElement>(".item__meta-section"));
+    const install = sections.find((section) =>
+        languages.bazaarInstallInfo && label(section.querySelector(".item__meta-title")) === languages.bazaarInstallInfo) ||
+        sections.find((section) =>
+            languages.installDate && rowsOf(section).some((row) => label(row.firstElementChild) === languages.installDate));
+    if (!install) {
+        return "";
+    }
+    const row = rowsOf(install).find((item) => !languages.version || label(item.firstElementChild) === languages.version);
+    return label(row?.lastElementChild).replace(/^v/i, "");
+};
+
 export const sideRepoURL = (side: HTMLElement): string => side.getAttribute("data-repourl") || "";
 
 const enhance = (readme: HTMLElement, i18n: TI18n) => {
@@ -142,6 +160,7 @@ export const observeBazaarReadme = (i18n: () => TI18n, settings: () => ISettings
             settings: settings(),
             repoURL: sideRepoURL(side),
             version: button.getAttribute("data-version") || marketVersion(side),
+            installedVersion: installedVersion(side),
         });
     };
     document.addEventListener("click", onClick, true);

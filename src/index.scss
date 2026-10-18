@@ -26,9 +26,14 @@
     min-width: 0;
   }
 
-  // 来源只有两项，按内容宽度即可；剩余空间留给版本列表
+  // 来源只有三项，按内容宽度即可；剩余空间留给版本列表
   &__select--source {
     flex: 0 1 auto;
+  }
+
+  // 提交记录有两个下拉，平分剩下的宽度
+  &__select--range {
+    flex: 1 1 8em;
   }
 
   &__body {
@@ -45,8 +50,8 @@
     margin-top: 4px;
   }
 
-  // 超时提示后面的「重新获取」：与正文里的链接同一样式
-  &__retry {
+  // 提示后面的动作（重新获取 / 查看提交记录）：与正文里的链接同一样式
+  &__link {
     background-color: transparent;
     border: 0;
     color: var(--b3-theme-primary);
@@ -56,6 +61,99 @@
     line-height: inherit;
     padding: 0;
     text-decoration: underline;
+  }
+
+  // 提交记录：一行一条，借 .b3-list-item 的行距与悬停底色
+  &__commits {
+    margin: 0 -8px;
+  }
+
+  &__commit {
+    // 哈希列的宽度：7 位短哈希之外再留一个图标的位置。图标类插件会给链接加图标，
+    // 只按 7ch 留宽度时哈希会被挤到下一行。
+    --commit-hash-column: calc(7ch + 24px);
+
+    // 相邻两行之间加一条淡分隔线，扫读时不容易串行
+    & + & {
+      border-top: 1px solid var(--b3-theme-surface-lighter);
+    }
+
+    .b3-list-item {
+      align-items: center;
+      cursor: pointer;
+      display: flex;
+      gap: 8px;
+      height: auto;
+      min-height: 28px;
+      padding: 4px 8px;
+    }
+
+    // 提交信息占满剩余宽度，超出截断成省略号；完整内容点开看
+    .b3-list-item__first {
+      display: flex;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .b3-list-item__text {
+      display: block;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .b3-list-item__meta {
+      margin-left: 0;
+    }
+  }
+
+  // 短哈希固定占一列，各行的哈希因此左对齐；列宽写成 min-width，
+  // 图标比预留位置还宽时让列自己长，而不是把哈希挤断行
+  &__hash {
+    color: var(--b3-theme-primary);
+    flex: 0 0 auto;
+    font-family: var(--b3-font-family-code);
+    font-size: var(--b3-font-size);
+    min-width: var(--commit-hash-column);
+    text-align: left;
+    text-decoration: none;
+    white-space: nowrap;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  // 展开后的完整提交信息：与提交信息列对齐（行内边距 + 哈希列 + 间距），不贴着左边缘
+  &__commit-detail {
+    color: var(--b3-theme-on-surface);
+    font-family: var(--b3-font-family-code);
+    font-size: var(--b3-font-size);
+    padding: 0 8px 8px calc(var(--commit-hash-column) + 16px);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  // 作者与提交时间：窄屏上不占行内那一列，改显示在展开的提交信息末尾
+  &__commit-detail-meta {
+    color: var(--b3-theme-on-surface);
+    display: none;
+    font-family: var(--b3-font-family);
+    margin-top: 6px;
+  }
+
+  // 移动端与紧凑布局：行内塞不下「哈希 + 提交信息 + 作者与时间」，
+  // 提交信息被挤成一小截，所以把作者与时间挪进展开的提交信息。
+  @media (max-width: 560px) {
+    &__commit .b3-list-item__meta {
+      display: none;
+    }
+
+    &__commit-detail-meta {
+      display: block;
+    }
   }
 }
 

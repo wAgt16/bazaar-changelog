@@ -1,5 +1,5 @@
 import {fetchBazaarAvailable} from "./bazaar";
-import {marketVersion, sideRepoURL} from "./bazaarDom";
+import {installedVersion, marketVersion, sideRepoURL} from "./bazaarDom";
 import {openChangelog} from "./dialog";
 import type {TI18n} from "./i18n";
 import {debug, warn} from "./logger";
@@ -63,12 +63,14 @@ const confirmUpdate = async (button: HTMLElement, i18n: TI18n, settings: ISettin
     const packageName = holder?.getAttribute("data-name") || "";
     let repo = side ? sideRepoURL(side) : "";
     let version = side ? marketVersion(side) : "";
+    const installed = side ? installedVersion(side) : "";
     debug("update: resolving the package behind the update button", {
         packageType,
         packageName,
         fromReadme: Boolean(side),
         domRepoURL: repo,
         domVersion: version,
+        domInstalledVersion: installed,
     });
     if (packageType && packageName) {
         // 集市索引里的版本才是「最新」，取不到就不做「最新」判定
@@ -85,12 +87,13 @@ const confirmUpdate = async (button: HTMLElement, i18n: TI18n, settings: ISettin
         replayUpdateClick(button, false);
         return;
     }
-    debug("update: opening the changelog dialog to confirm the update", {repoURL: repo, version});
+    debug("update: opening the changelog dialog to confirm the update", {repoURL: repo, version, installed});
     openChangelog({
         i18n,
         settings,
         repoURL: repo,
         version,
+        installedVersion: installed,
         onConfirm: () => replayUpdateClick(button, true),
     });
 };

@@ -1,5 +1,7 @@
 import {Dialog, getFrontend, showMessage} from "siyuan";
 import {fetchChangelog} from "./changelog";
+import {commitURL, fetchCommits, shortSha} from "./commits";
+import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
 import {fetchReleases, parseGithubRepo} from "./github";
 import type {IRelease} from "./github";
@@ -7,7 +9,7 @@ import {t} from "./i18n";
 import type {TI18n} from "./i18n";
 import {debug} from "./logger";
 import {applyMarkdownHTML, markdownToHTML} from "./render";
-import type {ISettings} from "./settings";
+import type {ISettings, TChangelogSource} from "./settings";
 import {compareVersion, isSameVersion} from "./version";
 
 const CLASS = "bazaar-release-notes";
@@ -15,6 +17,12 @@ const CLASS = "bazaar-release-notes";
 const TIMEOUT = 3000;
 /** 点「重新获取」后多等一会儿，慢但能通的仓库这次能拿到。 */
 const RETRY_TIMEOUT = 7000;
+/** 来源下拉的顺序，也是回退时「另一种来源」的候选顺序。 */
+const SOURCES: Array<[TChangelogSource, string]> = [
+    ["releaseNotes", "releaseNotes"],
+    ["changelog", "changelogFile"],
+    ["commits", "commits"],
+];
 
 export interface IChangelogDialogOptions {
     i18n: TI18n;
@@ -22,6 +30,8 @@ export interface IChangelogDialogOptions {
     repoURL: string;
     /** 集市检索到的最新版本；留空时不做「最新」判定，按 GitHub 上的最新发行版展示。 */
     version: string;
+    /** 本机已安装的版本，提交记录默认从这里看到集市最新版本；留空时退回上一个发行版。 */
+    installedVersion?: string;
     /** 传了就在弹窗底部加确认按钮，点它相当于确认这次的集市更新。 */
     onConfirm?: () => void;
 }
@@ -39,6 +49,11 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     /** 每次加载都换一个号，晚到的响应不能再改 DOM。 */
     let requestID = 0;
     let releases: IRelease[] = [];
+    /** 发行版列表取过一次没有；取失败也算过，免得每次切来源都重打一次接口。 */
+    let tagListLoaded = false;
+    let releaseStatus: "ok" | "missing" | "timeout" | "error" | undefined;
+    /** 起始/终止版本下拉是否已经按默认值填过，用户选过之后就不再抢他的选择。 */
+    let rangeInitialized = false;
     /**
      * 本次打开里已经确认「这个仓库没有 CHANGELOG」/「这一版没有发行说明」。
      * 只认确定性结论（404、该版本正文为空），超时不算；两个都为真时提示合成一句，
@@ -50,6 +65,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     let timeoutMs = TIMEOUT;
     debug(`dialog: opening for ${repo}`, {
         version: options.version || "(unknown)",
+        installedVersion: options.installedVersion || "(unknown)",
         preferredSource: options.settings.preferredSource,
         confirmable,
         mobile: isMobile,
@@ -61,11 +77,15 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         content: `<div class="${CLASS}__head">
     <span class="${CLASS}__label">${escapeHTML(t(i18n, "source"))}</span>
     <select class="b3-select ${CLASS}__select ${CLASS}__select--source" data-type="source">
-        <option value="releaseNotes">${escapeHTML(t(i18n, "releaseNotes"))}</option>
-        <option value="changelog">${escapeHTML(t(i18n, "changelogFile"))}</option>
+        ${SOURCES.map(([value, key]) =>
+            `<option value="${value}">${escapeHTML(t(i18n, key))}</option>`).join("")}
     </select>
     <span class="${CLASS}__label" data-type="version-label">${escapeHTML(t(i18n, "version"))}</span>
     <select class="b3-select ${CLASS}__select" data-type="version"></select>
+    <span class="${CLASS}__label fn__none" data-type="from-label">${escapeHTML(t(i18n, "fromVersion"))}</span>
+    <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="from"></select>
+    <span class="${CLASS}__label fn__none" data-type="to-label">${escapeHTML(t(i18n, "toVersion"))}</span>
+    <select class="b3-select ${CLASS}__select ${CLASS}__select--range fn__none" data-type="to"></select>
 </div>
 <div class="${CLASS}__body b3-typography">${escapeHTML(t(i18n, "loading"))}</div>
 <div class="b3-dialog__action">
@@ -86,9 +106,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     dialog.element.querySelector(".b3-dialog__container")?.classList.add(CLASS);
     const headElement = dialog.element.querySelector(`.${CLASS}__head`) as HTMLElement;
     const bodyElement = dialog.element.querySelector(`.${CLASS}__body`) as HTMLElement;
-    const sourceElement = headElement.querySelector('[data-type="source"]') as HTMLSelectElement;
-    const versionLabelElement = headElement.querySelector('[data-type="version-label"]') as HTMLElement;
-    const versionElement = headElement.querySelector('[data-type="version"]') as HTMLSelectElement;
+    const pick = <T extends Element>(type: string): T => headElement.querySelector(`[data-type="${type}"]`) as T;
+    const sourceElement = pick<HTMLSelectElement>("source");
+    const versionLabelElement = pick<HTMLElement>("version-label");
+    const versionElement = pick<HTMLSelectElement>("version");
+    const fromLabelElement = pick<HTMLElement>("from-label");
+    const fromElement = pick<HTMLSelectElement>("from");
+    const toLabelElement = pick<HTMLElement>("to-label");
+    const toElement = pick<HTMLSelectElement>("to");
 
     (dialog.element.querySelector('[data-type="close"]') as HTMLElement).addEventListener("click", () => {
         dialog.destroy();
@@ -105,29 +130,25 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const setBody = (text: string) => {
         bodyElement.textContent = text;
     };
-    /**
-     * 超时提示后面挂一个链接样式的「重新获取」，点了用 7 秒重来一次。
-     * `hint` 是第二行的补充说明：CHANGELOG 超时既可能是网络差，也可能这个仓库确实没有，
-     * 光看「超时」两个字分不出来。
-     */
-    const setBodyWithRetry = (text: string, hint?: string) => {
+    /** 主提示 + 第二行的补充说明（不挂动作按钮）。 */
+    const setBodyWithHint = (text: string, hint: string) => {
+        const line = document.createElement("div");
+        line.textContent = text;
+        const hintElement = document.createElement("div");
+        hintElement.className = `${CLASS}__hint`;
+        hintElement.textContent = hint;
+        bodyElement.replaceChildren(line, hintElement);
+    };
+    /** 提示后面挂一个链接样式的按钮；`hint` 是第二行的补充说明。 */
+    const setBodyWithAction = (text: string, action: string, onAction: () => void, hint?: string) => {
         const line = document.createElement("div");
         line.textContent = text;
         const button = document.createElement("button");
         button.type = "button";
-        button.className = `${CLASS}__retry`;
-        button.setAttribute("data-type", "retry");
-        button.textContent = t(i18n, "retry");
-        button.addEventListener("click", () => {
-            timeoutMs = RETRY_TIMEOUT;
-            const token = ++requestID;
-            debug("dialog: retrying with a longer timeout", {source: sourceElement.value, timeoutMs});
-            if (sourceElement.value === "changelog") {
-                void loadChangelog(token, false);
-            } else {
-                void loadReleaseNotes(token, false);
-            }
-        });
+        button.className = `${CLASS}__link`;
+        button.setAttribute("data-type", "action");
+        button.textContent = action;
+        button.addEventListener("click", onAction);
         line.append(" ", button);
         if (!hint) {
             bodyElement.replaceChildren(line);
@@ -138,11 +159,110 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         hintElement.textContent = hint;
         bodyElement.replaceChildren(line, hintElement);
     };
-    const setVersionVisible = (visible: boolean) => {
-        versionLabelElement.classList.toggle("fn__none", !visible);
-        versionElement.classList.toggle("fn__none", !visible);
+    /**
+     * 超时提示后面挂一个链接样式的「重新获取」，点了用 7 秒重来一次。
+     * `hint` 是第二行的补充说明：CHANGELOG 超时既可能是网络差，也可能这个仓库确实没有，
+     * 光看「超时」两个字分不出来。
+     */
+    const setBodyWithRetry = (text: string, hint?: string) => {
+        setBodyWithAction(text, t(i18n, "retry"), () => {
+            timeoutMs = RETRY_TIMEOUT;
+            debug("dialog: retrying with a longer timeout", {source: sourceElement.value, timeoutMs});
+            startSource(++requestID, false);
+        }, hint);
+    };
+    /**
+     * 「查看提交记录」只在这个仓库确实没有 CHANGELOG、且这一版确实没有发行说明时给：
+     * 另一种来源还有正文可读时，把人引到提交记录只是绕远，那条路本来也在来源下拉里。
+     * 返回是否给出了这个入口，调用方据此决定要不要换成普通提示。
+     */
+    const offerCommits = (): boolean => {
+        if (!changelogMissing || !releaseNotesMissing) {
+            return false;
+        }
+        setBodyWithAction(t(i18n, "bothSourcesMissing"), t(i18n, "viewCommits"), () => {
+            debug("dialog: switching to the commits for the missing content");
+            switchSource("commits", ++requestID);
+        });
+        return true;
+    };
+    const setMode = (mode: "none" | "single" | "range") => {
+        const single = mode === "single";
+        const range = mode === "range";
+        versionLabelElement.classList.toggle("fn__none", !single);
+        versionElement.classList.toggle("fn__none", !single);
+        fromLabelElement.classList.toggle("fn__none", !range);
+        fromElement.classList.toggle("fn__none", !range);
+        toLabelElement.classList.toggle("fn__none", !range);
+        toElement.classList.toggle("fn__none", !range);
     };
     const isStale = (token: number) => destroyed || token !== requestID;
+
+    /** 集市索引里的版本才算已知最新，GitHub 上比它新的发行版暂不显示。 */
+    const keepKnown = (list: IRelease[]): IRelease[] =>
+        options.version ? list.filter((item) => compareVersion(item.tag, options.version) <= 0) : list;
+
+    /**
+     * 取一次发行版列表：发行说明的版本下拉与提交记录的范围下拉都从这里来。
+     * 取失败也要记下来，否则切来源会反复重打同一个接口。
+     */
+    const loadTagList = async () => {
+        if (tagListLoaded) {
+            return;
+        }
+        tagListLoaded = true;
+        const result = await fetchReleases(repo, options.settings, timeoutMs);
+        releaseStatus = result.status;
+        const list = result.status === "ok" ? result.releases : [];
+        releases = keepKnown(list);
+        debug(`dialog: ${releases.length} of ${list.length} releases kept`, {
+            status: result.status,
+            bazaarVersion: options.version || "(unknown)",
+            dropped: list.filter((item) => !releases.includes(item)).map((item) => item.tag),
+        });
+    };
+
+    const fillVersionElement = () => {
+        const latestTag = versionElement.value ||
+            (options.version ? releases.find((item) => isSameVersion(item.tag, options.version))?.tag : "") ||
+            releases[0]?.tag;
+        versionElement.innerHTML = releases.map((release) =>
+            `<option value="${escapeHTML(release.tag)}"${release.tag === latestTag ? " selected" : ""}>${
+                escapeHTML(release.tag === latestTag ? `${release.tag} (${t(i18n, "latest")})` : release.tag)
+            }</option>`).join("");
+    };
+
+    /**
+     * 提交记录的起止版本。默认「本机已安装的版本 → 集市最新版本」，两者相同或取不到时
+     * 退回上一个发行版；一个发行版都没有时起点留空，直接列该端点最近的提交。
+     */
+    const fillRangeElements = () => {
+        if (rangeInitialized) {
+            return;
+        }
+        rangeInitialized = true;
+        const tags = releases.map((release) => release.tag);
+        const option = (tag: string) => `<option value="${escapeHTML(tag)}">${escapeHTML(tag)}</option>`;
+        fromElement.innerHTML = [`<option value="">${escapeHTML(t(i18n, "fromAnyVersion"))}</option>`]
+            .concat(tags.map(option)).join("");
+        toElement.innerHTML = ["HEAD"].concat(tags).map(option).join("");
+        const marketTag = (options.version && tags.find((tag) => isSameVersion(tag, options.version))) ||
+            tags[0] || "HEAD";
+        const installedTag = options.installedVersion ?
+            tags.find((tag) => isSameVersion(tag, options.installedVersion as string)) : undefined;
+        let fromTag = installedTag || tags.find((tag) => compareVersion(tag, marketTag) < 0) || "";
+        if (fromTag === marketTag) {
+            fromTag = tags.find((tag) => compareVersion(tag, marketTag) < 0) || "";
+        }
+        toElement.value = marketTag;
+        fromElement.value = fromTag;
+        debug("commits: range defaults", {
+            tags: tags.length,
+            installed: options.installedVersion || "(unknown)",
+            base: fromTag || "(none)",
+            head: marketTag,
+        });
+    };
 
     const showRelease = async (token: number, tag: string) => {
         const release = releases.find((item) => item.tag === tag) || releases[0];
@@ -151,9 +271,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             setBody(t(i18n, "releaseNotesUnavailable"));
             return;
         }
-        if (!release.markdown.trim()) {
+        // 正在看的这一版有没有正文：下面据此决定要不要把用户引到提交记录
+        releaseNotesMissing = !release.markdown.trim();
+        if (releaseNotesMissing) {
             debug(`release notes: ${release.tag} has an empty body`, {changelogMissing});
-            setBody(t(i18n, changelogMissing ? "bothSourcesMissing" : "releaseNotesEmpty"));
+            // 两种来源都没有内容时，才把提交记录摆到用户面前
+            if (!offerCommits()) {
+                setBody(t(i18n, "releaseNotesEmpty"));
+            }
             return;
         }
         debug(`release notes: showing ${release.tag}`, {
@@ -178,7 +303,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
      */
     const loadChangelog = async (token: number, autoSwitch: boolean) => {
         debug(`CHANGELOG: loading for ${repo}`, {autoSwitch, timeoutMs});
-        setVersionVisible(false);
+        setMode("none");
         setBody(t(i18n, "loading"));
         const result = await fetchChangelog(repo, options.settings, timeoutMs);
         if (isStale(token)) {
@@ -194,12 +319,13 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             changelogMissing = true;
             if (autoSwitch) {
                 debug("CHANGELOG: missing, falling back to the release notes");
-                sourceElement.value = "releaseNotes";
                 await loadReleaseNotes(token, false);
                 return;
             }
-            // 发行说明刚才也确认没有这一版时，两句话合成一句，别让用户以为另一边还有东西
-            setBody(t(i18n, releaseNotesMissing ? "bothSourcesMissing" : "changelogMissing"));
+            // 发行说明刚才也确认没有这一版时，两句话合成一句，并指向第三来源
+            if (!offerCommits()) {
+                setBody(t(i18n, "changelogMissing"));
+            }
             return;
         }
         const html = await markdownToHTML(result.markdown);
@@ -207,7 +333,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (!applyMarkdownHTML(bodyElement, html, `${repoWebURL(repo)}/blob/HEAD/`)) {
-            setBody(t(i18n, "changelogMissing"));
+            if (!offerCommits()) {
+                setBody(t(i18n, "changelogMissing"));
+            }
         }
     };
 
@@ -217,87 +345,206 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
      */
     const loadReleaseNotes = async (token: number, autoSwitch: boolean) => {
         debug(`release notes: loading for ${repo}`, {version: options.version, autoSwitch, timeoutMs});
-        setVersionVisible(false);
+        setMode("single");
         setBody(t(i18n, "loading"));
-        versionElement.innerHTML = "";
-        const result = await fetchReleases(repo, options.settings, timeoutMs);
+        await loadTagList();
         if (isStale(token)) {
             debug("release notes: response arrived after the request went stale, dropped");
             return;
         }
-        if (result.status === "timeout") {
+        if (releaseStatus === "timeout") {
             // 超时不自动换来源：多半是同一条线路慢，让用户点「重新获取」
             setBodyWithRetry(t(i18n, "releaseNotesTimeout"));
             return;
         }
-        // 拿不到就当成「这一版没有发行说明」，仍按原来的回退处理
-        const list = result.status === "ok" ? result.releases : [];
-        // 集市检索到的版本才算已知最新，GitHub 上比它新的发行版暂不显示
-        releases = options.version ? list.filter((item) => compareVersion(item.tag, options.version) <= 0) : list;
         const matched = options.version ?
             releases.find((item) => isSameVersion(item.tag, options.version)) : releases[0];
         // 这一版在列表里找不到，或者找到了但正文是空的：首次打开据此回退
         const nothingForVersion = !matched || !matched.markdown.trim();
         // 但接口出错时的空列表只说明这次没拿到，不能替用户断言「这一版没有发行说明」；
         // 拿到列表才更新这个结论，出错时保留上一次的确定性结果
-        if (result.status !== "error") {
+        if (releaseStatus !== "error") {
             releaseNotesMissing = nothingForVersion;
         }
-        debug(`release notes: ${releases.length} of ${list.length} kept`, {
-            status: result.status,
-            bazaarVersion: options.version || "(unknown)",
-            dropped: list.filter((item) => !releases.includes(item)).map((item) => item.tag),
+        debug(`release notes: ${releases.length} kept`, {
+            status: releaseStatus,
             matched: matched?.tag,
             nothingForVersion,
             missing: releaseNotesMissing,
         });
         if (autoSwitch && nothingForVersion) {
             debug("release notes: nothing for the bazaar version, falling back to the CHANGELOG");
-            sourceElement.value = "changelog";
             await loadChangelog(token, false);
             return;
         }
         if (releases.length === 0) {
-            setBody(t(i18n, releaseNotesMissing && changelogMissing ? "bothSourcesMissing" : "releaseNotesUnavailable"));
+            if (!offerCommits()) {
+                setBody(t(i18n, "releaseNotesUnavailable"));
+            }
             return;
         }
-        const latestTag = matched?.tag || releases[0].tag;
-        versionElement.innerHTML = releases.map((release) =>
-            `<option value="${escapeHTML(release.tag)}"${release.tag === latestTag ? " selected" : ""}>${
-                escapeHTML(release.tag === latestTag ? `${release.tag} (${t(i18n, "latest")})` : release.tag)
-            }</option>`).join("");
-        setVersionVisible(true);
+        fillVersionElement();
         await showRelease(token, versionElement.value);
     };
 
-    sourceElement.addEventListener("change", () => {
-        const token = ++requestID;
-        debug("dialog: source changed", {source: sourceElement.value});
-        if (sourceElement.value === "changelog") {
-            void loadChangelog(token, false);
-        } else {
-            void loadReleaseNotes(token, false);
+    /** 提交记录。不参与回退：它是另外两种来源都没有内容时的第三选择。 */
+    const loadCommits = async (token: number) => {
+        setMode("range");
+        setBody(t(i18n, "loading"));
+        await loadTagList();
+        if (isStale(token)) {
+            debug("commits: response arrived after the request went stale, dropped");
+            return;
         }
+        fillRangeElements();
+        const range = {base: fromElement.value, head: toElement.value};
+        debug(`commits: loading for ${repo}`, {range, timeoutMs});
+        const result = await fetchCommits(repo, range, options.settings, timeoutMs);
+        if (isStale(token)) {
+            debug("commits: response arrived after the request went stale, dropped");
+            return;
+        }
+        if (result.status === "timeout") {
+            setBodyWithRetry(t(i18n, "commitsTimeout"));
+            return;
+        }
+        if (result.status === "empty") {
+            setBody(t(i18n, "commitsEmpty"));
+            return;
+        }
+        if (result.status === "error") {
+            // 开了加速还回 403：多半是反代不代理 compare 接口，直说，别让用户以为版本选错了
+            const hint = result.forbidden && options.settings.githubAcceleration ?
+                t(i18n, "commitsForbiddenViaAcceleration") : "";
+            debug("commits: failed", {
+                forbidden: result.forbidden,
+                acceleration: options.settings.githubAcceleration,
+                hint: Boolean(hint),
+            });
+            if (hint) {
+                setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
+            } else {
+                setBody(t(i18n, "commitsUnavailable"));
+            }
+            return;
+        }
+        renderCommits(result.commits, result.total);
+    };
+
+    /**
+     * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，作者与日期靠右。
+     * 窄屏上没有靠右的位置，作者与日期改到展开的提交信息末尾（同一个节点，由 CSS 决定显示在哪）。
+     * 点这一行展开完整提交信息，展开的内容与提交信息列对齐。
+     */
+    const commitItem = (commit: ICommit): HTMLElement => {
+        const item = document.createElement("div");
+        item.className = `${CLASS}__commit`;
+        const row = document.createElement("div");
+        row.className = "b3-list-item";
+        row.setAttribute("data-type", "commit");
+        const hash = document.createElement("a");
+        hash.className = `${CLASS}__hash`;
+        hash.setAttribute("data-type", "commit-link");
+        hash.href = commitURL(repo, commit.sha);
+        hash.target = "_blank";
+        hash.rel = "noopener noreferrer";
+        hash.textContent = shortSha(commit.sha);
+        row.append(hash);
+        const first = document.createElement("div");
+        first.className = "b3-list-item__first";
+        const text = document.createElement("span");
+        text.className = "b3-list-item__text";
+        text.textContent = commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage");
+        first.append(text);
+        row.append(first);
+        const meta = document.createElement("span");
+        meta.className = "b3-list-item__meta";
+        const date = commit.date.slice(0, 10);
+        const metaText = [commit.author, date].filter((value) => value).join(" · ");
+        meta.textContent = metaText;
+        row.append(meta);
+        const detail = document.createElement("div");
+        detail.className = `${CLASS}__commit-detail fn__none`;
+        detail.textContent = commit.message.trim() || t(i18n, "commitNoMessage");
+        if (metaText) {
+            // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
+            const note = document.createElement("div");
+            note.className = `${CLASS}__commit-detail-meta`;
+            note.textContent = metaText;
+            detail.append(note);
+        }
+        row.addEventListener("click", (event) => {
+            // 短哈希与信息里的链接要能跳 GitHub，别把它们当成展开详情的点击
+            if (event.target instanceof Element && event.target.closest("a")) {
+                return;
+            }
+            detail.classList.toggle("fn__none");
+        });
+        item.append(row, detail);
+        return item;
+    };
+
+    const renderCommits = (commits: ICommit[], total: number) => {
+        const countElement = document.createElement("div");
+        countElement.className = `${CLASS}__hint`;
+        countElement.textContent = t(i18n, "commitsCount", {count: String(total)});
+        // .b3-list--background 带来思源原生的行悬停底色与圆角
+        const list = document.createElement("div");
+        list.className = `b3-list b3-list--background ${CLASS}__commits`;
+        commits.forEach((commit) => list.append(commitItem(commit)));
+        const fragment = document.createDocumentFragment();
+        fragment.append(countElement, list);
+        if (total > commits.length) {
+            // compare 最多给 250 条，剩下的让用户去 GitHub 看
+            const note = document.createElement("div");
+            note.className = `${CLASS}__hint`;
+            note.textContent = t(i18n, "commitsTruncated", {count: String(commits.length)});
+            fragment.append(note);
+        }
+        bodyElement.replaceChildren(fragment);
+    };
+
+    const startSource = (token: number, autoSwitch: boolean) => {
+        const source = sourceElement.value as TChangelogSource;
+        if (source === "commits") {
+            void loadCommits(token);
+        } else if (source === "changelog") {
+            void loadChangelog(token, autoSwitch);
+        } else {
+            void loadReleaseNotes(token, autoSwitch);
+        }
+    };
+    /** 由弹窗自己切来源（「查看提交记录」按钮等），不触发 change 事件。 */
+    const switchSource = (source: TChangelogSource, token: number) => {
+        sourceElement.value = source;
+        startSource(token, false);
+    };
+
+    sourceElement.addEventListener("change", () => {
+        debug("dialog: source changed", {source: sourceElement.value});
+        startSource(++requestID, false);
     });
     versionElement.addEventListener("change", () => {
         debug("dialog: version changed", {tag: versionElement.value});
         void showRelease(requestID, versionElement.value);
     });
+    const onRangeChange = () => {
+        debug("commits: range changed", {base: fromElement.value, head: toElement.value});
+        void loadCommits(++requestID);
+    };
+    fromElement.addEventListener("change", onRangeChange);
+    toElement.addEventListener("change", onRangeChange);
 
     sourceElement.value = options.settings.preferredSource;
-    const token = ++requestID;
-    if (sourceElement.value === "changelog") {
-        void loadChangelog(token, true);
-    } else {
-        void loadReleaseNotes(token, true);
-    }
+    startSource(++requestID, true);
 };
 
 const repoWebURL = (repo: string) => `https://github.com/${repo}`;
 
 /**
- * 打开「更新日志」弹窗：顶部选来源（发行说明 / CHANGELOG），发行说明再选版本。
- * 发行说明只认 https://github.com/owner/repo 形式的仓库地址。
+ * 打开「更新日志」弹窗：顶部选来源（发行说明 / CHANGELOG / 提交记录），
+ * 发行说明再选版本，提交记录选起止版本。
+ * 只认 https://github.com/owner/repo 形式的仓库地址。
  */
 export const openChangelog = (options: IChangelogDialogOptions) => {
     const repo = parseGithubRepo(options.repoURL);
@@ -305,6 +552,7 @@ export const openChangelog = (options: IChangelogDialogOptions) => {
         repoURL: options.repoURL,
         repo,
         version: options.version || "(unknown)",
+        installedVersion: options.installedVersion || "(unknown)",
         preferredSource: options.settings.preferredSource,
         confirmable: Boolean(options.onConfirm),
     });
