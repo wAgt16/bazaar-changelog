@@ -77,6 +77,18 @@ export const normalizeAccelerationURL = (value: string): string => {
     return trimmed.endsWith("/") ? trimmed : trimmed + "/";
 };
 
+/**
+ * 这次没拿到的人话原因，三个来源共用。弹窗把它写成第二行小字，用户据此判断该重试还是该换路子。
+ * 不直接透传 Error.message：那里多半是 `TypeError: Failed to fetch` 这类没法读的东西。
+ */
+export type TFailureReason =
+    /** 请求根本没发出去或连接中断。 */
+    | {kind: "network"}
+    /** 对方回了非 2xx，带上状态码。 */
+    | {kind: "http", status: number}
+    /** 回了 200，但正文不是预期的 JSON。 */
+    | {kind: "payload"};
+
 /** 开启加速且地址合法时，把原始地址挂到加速前缀后面；否则原样返回。 */
 export const resolveGithubURL = (url: string, settings: ISettings): string => {
     if (!settings.githubAcceleration) {
@@ -99,8 +111,8 @@ export type TReleasesResult =
     | {status: "missing"}
     /** 超过本次超时。 */
     | {status: "timeout"}
-    /** 其他失败（网络错误、HTTP 错误码、限流）。 */
-    | {status: "error"};
+    /** 其他失败（网络错误、HTTP 错误码、限流），`reason` 给弹窗写第二行小字。 */
+    | {status: "error", reason: TFailureReason};
 
 /**
  * 取仓库的发行版列表：丢掉草稿与无 tag 的项，按发布时间倒序。
@@ -142,12 +154,19 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
                 rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),
                 rateLimitReset: response.headers.get("x-ratelimit-reset"),
             });
-            return {status: "error"};
+            return {status: "error", reason: {kind: "http", status: response.status}};
         }
-        const payload: unknown = await response.json();
+        let payload: unknown;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            // 200 但不是 JSON：多半是反代或网关塞回来的错误页
+            debug(`release notes: ${repo} body is not JSON`, {elapsed: Date.now() - started, error: String(error)});
+            return timedOut ? {status: "timeout"} : {status: "error", reason: {kind: "payload"}};
+        }
         if (!Array.isArray(payload)) {
             debug(`release notes: ${repo} did not return an array`, {payload});
-            return {status: "error"};
+            return {status: "error", reason: {kind: "payload"}};
         }
         const releases = payload
             .filter((item): item is IGithubRelease => Boolean(item) && typeof item === "object")
@@ -176,7 +195,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
             timeoutMs,
             error: String(error),
         });
-        return {status: timedOut ? "timeout" : "error"};
+        return timedOut ? {status: "timeout"} : {status: "error", reason: {kind: "network"}};
     } finally {
         window.clearTimeout(timer);
     }

@@ -18,10 +18,13 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   repository CHANGELOG (one file, not per version), or commits (the range between two versions).
 - **"Latest" follows the bazaar**: only the version the bazaar index has seen counts as latest;
   releases that are newer on GitHub are not listed yet.
-- **Falls back to the other source when one is missing**: if the bazaar version has no release notes
+- **Falls back to the other source only when one is missing**: if the bazaar version has no release notes
   at the moment you open the dialog, this open switches to the CHANGELOG; when the CHANGELOG is the
-  preferred source but the repository has none, it switches back to the release notes. The next open
-  follows the preferred source again.
+  preferred source but the repository has none, it switches back to the release notes. The source
+  dropdown moves with it, and the next open follows the preferred source again.
+- **A failed request stays on its source and says why**: errors, rate limiting and timeouts never switch
+  sources (the other one would fail just as well); below the main line, a second small line gives the
+  reason ("Request refused (403); probably rate limiting", "Network error: could not reach GitHub").
 - **Commits default to "installed version → bazaar latest"**: the start and end versions can be changed
   in the dialog; with the start set to "Any" the newest commits of that endpoint are listed. One commit
   per row with its 7-character short hash: the hash opens the commit on GitHub, and clicking the message
@@ -63,7 +66,8 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 
 - **Release notes**: the GitHub Releases API (`https://api.github.com/repos/<owner>/<repo>/releases`),
   at most 100 entries, drafts filtered out, newest first; one request per repository per 30 minutes.
-  A timeout is not treated as a failure, so it can still be retried.
+  A timeout or a failure stays on the release notes and reports the reason plus a Retry; it does not
+  switch sources.
 - **CHANGELOG**: `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/<path>` (`HEAD` is resolved
   by GitHub to the repository's default branch), where `path` is one of `CHANGELOG.md`,
   `docs/CHANGELOG.md` and `doc/CHANGELOG.md`, all requested **in parallel**; the first one answering
@@ -71,16 +75,18 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   "this path has no file"; `403` / `429` / `5xx` / network errors only mean this request did not get
   through and are never reported as "none". All three candidates answering 404 reports "this
   repository has no CHANGELOG" (on a slow network those 404s can also outlast the first timeout, so
-  that verdict is waited for up to 8 seconds); anything else reports a timeout, with a second line
-  saying "Poor network, or this repository has no CHANGELOG". A timeout does not switch sources on its
-  own, because a slow route would be just as slow for the other source.
+  that verdict is waited for up to 8 seconds); when a candidate really failed, the second line gives
+  that reason, and when the route was merely slow it reports a timeout with the second line "Poor
+  network, or this repository has no CHANGELOG". Neither switches sources.
 - **Bazaar latest version**: `available.version` from the kernel `/api/bazaar/getBazaarPackage`. It
   decides the "Latest" mark and filters out releases the bazaar index has not seen.
 - **Commits**: the GitHub Compare API
   (`https://api.github.com/repos/<owner>/<repo>/compare/<base>...<head>`); with the start version set
-  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Compare returns
-  at most 250 commits and the note under the list says so when that limit is hit. One request per
-  repository per 30 minutes, and a timeout can still be retried.
+  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Commits are
+  always listed newest first (the two endpoints return opposite orders on GitHub's side). Compare returns
+  at most 250 commits and the note after the "Listing N commits" count says so when that limit is hit. One
+  request per repository per 30 minutes, and a timeout can still be retried; when the request fails the
+  dialog offers "List commits up to HEAD", which retries through `/commits`.
 - **Markdown rendering**: the kernel `/api/lute/md2html`, the same Lute pipeline the bazaar README
   uses, followed by DOMPurify.
 
@@ -95,9 +101,11 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   decrypt it. It guards against a settings file being pasted somewhere on its own.
 - A commit list shows at most 250 commits (the compare API limit); older commits have to be looked at
   on GitHub.
-- With GitHub acceleration on, some proxies do not forward the `compare` endpoint (403), so the commit
-  list cannot be loaded; the dialog says "The GitHub acceleration service may not support fetching
-  commits for the selected range" — turn acceleration off to read them directly.
+- With GitHub acceleration on, some proxies do not forward the `compare` endpoint, so the commit list
+  cannot be loaded (whatever status the proxy answers with); the dialog says "The GitHub acceleration
+  service may not support fetching commits for the selected range" with this attempt's reason in
+  parentheses, and offers "List commits up to HEAD", which uses the `/commits` endpoint the proxy usually
+  does forward. Turning acceleration off to read them directly also works.
 - Both the "Latest" mark and the version filter depend on the bazaar index, which refreshes every
   1–3 hours.
 - Update confirmation relies on SiYuan's own bazaar update flow. If SiYuan changes that flow the

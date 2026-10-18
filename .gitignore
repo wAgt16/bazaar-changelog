@@ -12,6 +12,9 @@ index.css
 kernel.js
 /i18n/
 
+# 测试覆盖率报告
+coverage/
+
 # 临时文件
 RELEASE_NOTES.md
 *.local.md
