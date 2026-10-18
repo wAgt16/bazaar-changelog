@@ -281,6 +281,12 @@ export default class ReleaseNotePlugin extends Plugin {
      */
     private async persistToken(next: string): Promise<boolean> {
         const previous = this.token;
+        // Web Crypto 只在安全上下文里有（桌面端、localhost、https）；局域网 http 访问时明确说明
+        if (next && !crypto?.subtle) {
+            showMessage(`[${this.name}] ${t(this.texts(), "tokenNeedsSecureContext")}`);
+            this.syncSettingControls();
+            return false;
+        }
         try {
             if (!next) {
                 await this.removeData(TOKEN_STORAGE_NAME).catch(() => undefined);
