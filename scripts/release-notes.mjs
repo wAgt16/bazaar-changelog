@@ -10,6 +10,7 @@ const SECTIONS = new Map([
     ["feat", ["✨", "Features"]],
     ["fix", ["🐛", "Bug Fixes"]],
     ["perf", ["⚡", "Performance"]],
+    ["revert", ["⏪️", "Reverts"]],
     ["refactor", ["♻️", "Refactoring"]],
     ["docs", ["📝", "Documentation"]],
     ["build", ["📦", "Build System"]],

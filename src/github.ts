@@ -1,5 +1,6 @@
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
+import {githubAPIHeaders, willAuthorize} from "./token";
 
 export interface IRelease {
     tag: string;
@@ -7,6 +8,34 @@ export interface IRelease {
     /** 发行说明 Markdown 原文，由调用方拿去内核渲染。 */
     markdown: string;
 }
+
+/**
+ * 自动生成的发行说明正文只有一行 `**Full Changelog**: https://github.com/o/r/compare/a...b`。
+ * 它没有任何内容，却会让「这一版没有发行说明」的回退判断失效，所以单独认出来。
+ */
+const FULL_CHANGELOG_LINE =
+    /^\**\s*Full Changelog\s*\**\s*:?\s*<?https?:\/\/github\.com\/[^/\s]+\/[^/\s]+\/compare\/(\S+?)\.\.\.(\S+?)>?\s*$/i;
+
+/**
+ * 正文是否只有 Full Changelog 链接。是的话返回它指向的那段范围，调用方可以直接拿去看提交记录。
+ * 只要有一行别的内容就不算 —— 手工写的发行说明不该被当成空的。
+ */
+export const parseFullChangelogOnly = (markdown: string): {base: string, head: string} | undefined => {
+    // GitHub 自动生成时可能带上注释，注释不算内容
+    const lines = markdown.replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line !== "");
+    if (lines.length !== 1) {
+        return undefined;
+    }
+    const matched = FULL_CHANGELOG_LINE.exec(lines[0]);
+    if (!matched) {
+        return undefined;
+    }
+    const base = decodeURIComponent(matched[1]);
+    const head = decodeURIComponent(matched[2]);
+    return base && head ? {base, head} : undefined;
+};
 
 /** 默认（也是唯一内置的）API 地址；要加速只能在设置里手动加前缀。 */
 const RELEASES_API = "https://api.github.com";
@@ -92,6 +121,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
     debug(`release notes: GET ${url}`, {
         acceleration: settings.githubAcceleration,
         accelerationURL: settings.githubAccelerationURL,
+        authorized: willAuthorize(url),
         timeoutMs,
     });
     const started = Date.now();
@@ -104,10 +134,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
     try {
         const response = await fetch(url, {
             signal: controller.signal,
-            headers: {
-                Accept: "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers: githubAPIHeaders(url),
         });
         if (!response.ok) {
             debug(`release notes: ${repo} responded ${response.status}`, {
@@ -155,32 +182,3 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
     }
 };
 
-/**
- * 只探「直连 GitHub 通不通」：收到任何响应（包括 404）都算通，只有连不上和超时算不通。
- * 新装后据此决定要不要自动开加速，所以不能因为对方回了个错误码就说线路有问题；
- * 调用方传直连地址，加速开关不该影响这次判断。
- */
-export const probeGithub = async (url: string, timeoutMs: number): Promise<boolean> => {
-    debug(`probe: GET ${url}`, {timeoutMs});
-    const started = Date.now();
-    const controller = new AbortController();
-    let timedOut = false;
-    const timer = window.setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-    }, timeoutMs);
-    try {
-        const response = await fetch(url, {signal: controller.signal});
-        debug(`probe: ${url} responded ${response.status}`, {elapsed: Date.now() - started});
-        return true;
-    } catch (error) {
-        debug(`probe: ${url} ${timedOut ? "timed out" : "failed"}`, {
-            elapsed: Date.now() - started,
-            timeoutMs,
-            error: String(error),
-        });
-        return false;
-    } finally {
-        window.clearTimeout(timer);
-    }
-};

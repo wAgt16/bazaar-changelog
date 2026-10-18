@@ -18,7 +18,7 @@ const RAW = "https://raw.githubusercontent.com";
 const CONFIRM_TIMEOUT = 8000;
 
 export type TChangelogResult =
-    | {status: "ok", markdown: string}
+    | {status: "ok", markdown: string, /** 命中的那个文件路径，拿去拼 GitHub 页面地址。 */ path: string}
     /** 三个候选都明确回答「这个路径上没有文件」：这个仓库确实没有 changelog。 */
     | {status: "missing"}
     /** 没能得出结论：超时、被限流或请求失败，不能断言「没有」，重来一次还有机会。 */
@@ -27,7 +27,7 @@ export type TChangelogResult =
 /** 入口明确回答「这个路径上没有文件」：404，或者 200 但正文是空的。 */
 class MissingFileError extends Error {}
 
-const cache = new Map<string, string>();
+const cache = new Map<string, {markdown: string, path: string}>();
 
 /**
  * 取仓库的 changelog 正文，走 raw.githubusercontent.com；开了加速就和发行说明一样改写地址。
@@ -36,8 +36,8 @@ const cache = new Map<string, string>();
 export const fetchChangelog = async (repo: string, settings: ISettings, timeoutMs: number): Promise<TChangelogResult> => {
     const cached = cache.get(repo);
     if (cached !== undefined) {
-        debug(`CHANGELOG: cache hit for ${repo}`, {bytes: cached.length});
-        return {status: "ok", markdown: cached};
+        debug(`CHANGELOG: cache hit for ${repo}`, {bytes: cached.markdown.length, path: cached.path});
+        return {status: "ok", markdown: cached.markdown, path: cached.path};
     }
     const urls = PATHS.map((filePath) => resolveGithubURL(`${RAW}/${repo}/HEAD/${filePath}`, settings));
     debug(`CHANGELOG: ${repo} tried in parallel`, {
@@ -50,8 +50,8 @@ export const fetchChangelog = async (repo: string, settings: ISettings, timeoutM
     const controller = new AbortController();
     /** 已经有候选真正失败（连不上 / 403 / 5xx）：这是入口的问题，不值得再等。 */
     let failed = false;
-    const requests = urls.map((url) =>
-        fetchOne(url, controller.signal).catch((error: unknown) => {
+    const requests = urls.map((url, index) =>
+        fetchOne(url, controller.signal, PATHS[index]).catch((error: unknown) => {
             if (!(error instanceof MissingFileError)) {
                 failed = true;
             }
@@ -72,12 +72,13 @@ export const fetchChangelog = async (repo: string, settings: ISettings, timeoutM
     timer = window.setTimeout(alarm, timeoutMs);
     try {
         const hit = await Promise.any(requests);
-        cache.set(repo, hit.markdown);
+        cache.set(repo, {markdown: hit.markdown, path: hit.path});
         debug(`CHANGELOG: ${repo} hit ${hit.url}`, {
             elapsed: Date.now() - started,
             bytes: hit.markdown.length,
+            path: hit.path,
         });
-        return {status: "ok", markdown: hit.markdown};
+        return {status: "ok", markdown: hit.markdown, path: hit.path};
     } catch (error) {
         const errors: unknown[] = error instanceof AggregateError ? error.errors : [error];
         const status = errors.length > 0 && errors.every((item) => item instanceof MissingFileError) ?
@@ -95,7 +96,11 @@ export const fetchChangelog = async (repo: string, settings: ISettings, timeoutM
     }
 };
 
-const fetchOne = async (url: string, signal: AbortSignal): Promise<{url: string, markdown: string}> => {
+const fetchOne = async (
+    url: string,
+    signal: AbortSignal,
+    path: string,
+): Promise<{url: string, markdown: string, path: string}> => {
     const response = await fetch(url, {signal});
     if (response.status === 404) {
         debug(`CHANGELOG: ${url} responded 404`);
@@ -110,5 +115,5 @@ const fetchOne = async (url: string, signal: AbortSignal): Promise<{url: string,
         debug(`CHANGELOG: ${url} is empty`);
         throw new MissingFileError(url);
     }
-    return {url, markdown};
+    return {url, markdown, path};
 };
