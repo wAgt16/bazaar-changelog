@@ -5,11 +5,16 @@ import type {TI18n} from "./i18n";
 import {t} from "./i18n";
 import "./index.scss";
 import {debug, setDebugEnabled, warn} from "./logger";
+import {createSecretKey, decryptSecret, encryptSecret, exportSecretKey, importSecretKey} from "./secret";
 import {DEFAULT_SETTINGS, mergeSettings} from "./settings";
 import type {ISettings} from "./settings";
+import {hasGithubToken, setGithubToken} from "./token";
 import {interceptBazaarUpdate} from "./update";
 
 const STORAGE_NAME = "settings";
+/** 令牌与它的钥匙分开存：设置文件被单独贴出来时不会连带泄漏令牌。 */
+const TOKEN_STORAGE_NAME = "githubToken";
+const TOKEN_KEY_STORAGE_NAME = "githubTokenKey";
 /**
  * 「探测过没有」单独存一个键：设置面板落盘的是整份设置对象，把探测标记塞进去的话，
  * 面板一次确认就会把它按默认值冲掉，于是每次启动都重新探测。
@@ -30,7 +35,10 @@ export default class ReleaseNotePlugin extends Plugin {
     private accelerationURLElement: HTMLInputElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
     private referencesElement: HTMLInputElement | undefined;
+    private tokenElement: HTMLInputElement | undefined;
     private debugElement: HTMLInputElement | undefined;
+    /** 解出来的令牌明文只放内存，落盘的是 githubToken 里的密文。 */
+    private token = "";
 
     override async onload() {
         const saved = await this.loadData(STORAGE_NAME).catch(() => undefined);
@@ -43,8 +51,11 @@ export default class ReleaseNotePlugin extends Plugin {
             await this.persistSettings(this.settings);
         }
         setDebugEnabled(this.settings.debug);
+        // 令牌要在设置面板建出来之前解好，输入框才有值可填
+        await this.loadToken();
         debug(`onload: ${this.name} (${this.displayName})`, {
             settings: this.settings,
+            hasToken: hasGithubToken(),
             frontend: window.siyuan.config?.system?.os ?? "",
             readonly: Boolean(window.siyuan.config?.readonly),
         });
@@ -110,6 +121,20 @@ export default class ReleaseNotePlugin extends Plugin {
             },
         });
         this.setting.addItem({
+            title: t(this.texts(), "githubToken"),
+            description: t(this.texts(), "githubTokenTip"),
+            createActionElement: () => {
+                const element = document.createElement("input");
+                element.type = "password";
+                element.className = "b3-text-field fn__block";
+                element.placeholder = "ghp_… / github_pat_…";
+                element.value = this.token;
+                this.suppressOpenKeyboard(element);
+                this.tokenElement = element;
+                return element;
+            },
+        });
+        this.setting.addItem({
             title: t(this.texts(), "debugMode"),
             description: t(this.texts(), "debugModeTip"),
             createActionElement: () => {
@@ -143,7 +168,7 @@ export default class ReleaseNotePlugin extends Plugin {
      * 数据照旧保留。
      */
     override async uninstall() {
-        for (const name of [STORAGE_NAME, PROBE_STORAGE_NAME]) {
+        for (const name of [STORAGE_NAME, PROBE_STORAGE_NAME, TOKEN_STORAGE_NAME, TOKEN_KEY_STORAGE_NAME]) {
             try {
                 const response = await this.removeData(name) as {code?: number, msg?: string} | undefined;
                 // 404 是这个文件本来就没写过，不算失败；其余非 0 都要留下痕迹
@@ -240,8 +265,75 @@ export default class ReleaseNotePlugin extends Plugin {
         if (!(await this.persistSettings(next))) {
             return;
         }
+        // 令牌单独存（加密后的密文），输入框里的明文只在这次保存时用一下；
+        // 存失败时 persistToken 会提示并把输入框回滚成旧值
+        const typed = (this.tokenElement?.value || "").trim();
+        if (typed !== this.token) {
+            await this.persistToken(typed);
+        }
         this.syncSettingControls();
         setDebugEnabled(this.settings.debug);
+    }
+
+    /**
+     * 令牌落盘：随机钥匙加密后写 `githubToken`，钥匙本身写 `githubTokenKey`。
+     * 每次保存都换一把新钥匙，旧密文随即失效。写完必须读回来解一次，确认真的能用。
+     */
+    private async persistToken(next: string): Promise<boolean> {
+        const previous = this.token;
+        try {
+            if (!next) {
+                await this.removeData(TOKEN_STORAGE_NAME).catch(() => undefined);
+                await this.removeData(TOKEN_KEY_STORAGE_NAME).catch(() => undefined);
+                this.token = "";
+                setGithubToken("");
+                debug("token: cleared");
+                return true;
+            }
+            const key = await createSecretKey();
+            const blob = await encryptSecret(next, key);
+            await this.saveData(TOKEN_KEY_STORAGE_NAME, await exportSecretKey(key));
+            await this.saveData(TOKEN_STORAGE_NAME, blob);
+            // 宿主的 saveData 在真正落盘前就可能 resolve，读回解开一次才算数
+            const storedBlob = await this.loadData(TOKEN_STORAGE_NAME).catch(() => undefined);
+            const storedKey = await this.loadData(TOKEN_KEY_STORAGE_NAME).catch(() => undefined);
+            if (typeof storedBlob !== "string" || typeof storedKey !== "string") {
+                throw new Error("the token was not stored");
+            }
+            if (await decryptSecret(storedBlob, await importSecretKey(storedKey)) !== next) {
+                throw new Error("the stored token does not read back");
+            }
+            this.token = next;
+            setGithubToken(next);
+            // 只记长度，令牌本身绝不进日志
+            debug("token: saved", {length: next.length});
+            return true;
+        } catch (error) {
+            warn("token: saving failed", {error: String(error)});
+            showMessage(`[${this.name}] ${String(error)}`);
+            this.token = previous;
+            setGithubToken(previous);
+            return false;
+        }
+    }
+
+    /** 启动时把令牌解出来放进内存；解不开就当作没配，毒数据不留在盘里继续误导。 */
+    private async loadToken() {
+        const [blob, rawKey] = await Promise.all([
+            this.loadData(TOKEN_STORAGE_NAME).catch(() => undefined),
+            this.loadData(TOKEN_KEY_STORAGE_NAME).catch(() => undefined),
+        ]);
+        if (typeof blob !== "string" || typeof rawKey !== "string") {
+            return;
+        }
+        try {
+            const token = await decryptSecret(blob, await importSecretKey(rawKey));
+            this.token = token;
+            setGithubToken(token);
+            debug("token: loaded", {length: token.length});
+        } catch (error) {
+            warn("token: the stored token cannot be decrypted, ignoring it", {error: String(error)});
+        }
     }
 
     /**
@@ -282,6 +374,9 @@ export default class ReleaseNotePlugin extends Plugin {
         }
         if (this.referencesElement) {
             this.referencesElement.checked = this.settings.githubReferences;
+        }
+        if (this.tokenElement) {
+            this.tokenElement.value = this.token;
         }
         if (this.debugElement) {
             this.debugElement.checked = this.settings.debug;

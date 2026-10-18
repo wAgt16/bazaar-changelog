@@ -33,6 +33,8 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 - **#PR / issue numbers and @user become GitHub links**: `#123`, `owner/repo#123` and `@user` in
   release notes, the CHANGELOG and commits are rendered as links (cross-repository references point at
   their own repository), and bare URLs become clickable too; this can be turned off in the settings.
+- **Optional GitHub token**: set a personal access token to use your own quota for release notes and
+  commits instead of the anonymous ~60 requests per hour; the token is only sent to `api.github.com`.
 - **GitHub acceleration switch**: off by default, so `api.github.com` and
   `raw.githubusercontent.com` are requested directly. Turn it on and fill in one acceleration URL
   when you need it; both release notes and CHANGELOG requests then go through it.
@@ -46,6 +48,7 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 | Link references | On | Render `#123`, `owner/repo#123` and `@user` as links to GitHub. |
 | GitHub acceleration | Off | When off, release notes reach `api.github.com` and the CHANGELOG reaches `raw.githubusercontent.com` directly. |
 | Acceleration URL | Empty | A prefix proxy such as `https://gh-proxy.com/` . With acceleration on and an http(s) URL set, both release notes and CHANGELOG requests are prepended with it. |
+| GitHub token | Empty | A personal access token (PAT) for a higher `api.github.com` quota. Stored encrypted in the plugin's private storage (the key in a separate file) and only sent to `api.github.com`; with acceleration on, requests are relayed by a third-party proxy and carry no token. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |
 
 ## Data sources
@@ -77,7 +80,11 @@ A SiYuan plugin that shows bazaar package release notes and repository changelog
 
 - Only GitHub-hosted bazaar packages are supported (the SiYuan bazaar only indexes GitHub repositories).
 - Release notes and commits use GitHub's anonymous API, roughly 60 requests per hour per IP. When that
-  is exhausted the dialog says they are unavailable.
+  is exhausted the dialog says they are unavailable. A GitHub token raises this to your own quota
+  (usually 5000 per hour).
+- A plugin has no system keyring, so the token is only encrypted and stored together with its key in the
+  plugin's private storage (`data/storage/petal/<plugin name>/`); anyone who can read that directory can
+  decrypt it. It guards against a settings file being pasted somewhere on its own.
 - A commit list shows at most 250 commits (the compare API limit); older commits have to be looked at
   on GitHub.
 - With GitHub acceleration on, some proxies do not forward the `compare` endpoint (403), so the commit

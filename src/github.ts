@@ -1,5 +1,6 @@
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
+import {githubAPIHeaders, willAuthorize} from "./token";
 
 export interface IRelease {
     tag: string;
@@ -120,6 +121,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
     debug(`release notes: GET ${url}`, {
         acceleration: settings.githubAcceleration,
         accelerationURL: settings.githubAccelerationURL,
+        authorized: willAuthorize(url),
         timeoutMs,
     });
     const started = Date.now();
@@ -132,10 +134,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
     try {
         const response = await fetch(url, {
             signal: controller.signal,
-            headers: {
-                Accept: "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers: githubAPIHeaders(url),
         });
         if (!response.ok) {
             debug(`release notes: ${repo} responded ${response.status}`, {

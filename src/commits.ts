@@ -1,6 +1,7 @@
 import {resolveGithubURL} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
+import {githubAPIHeaders, willAuthorize} from "./token";
 
 /** 列表里的一条提交。`message` 保留全文，弹窗只折叠展示首行。 */
 export interface ICommit {
@@ -92,6 +93,7 @@ export const fetchCommits = async (
         base: range.base || "(none)",
         head: range.head || "(none)",
         acceleration: settings.githubAcceleration,
+        authorized: willAuthorize(url),
         timeoutMs,
     });
     const started = Date.now();
@@ -104,10 +106,7 @@ export const fetchCommits = async (
     try {
         const response = await fetch(url, {
             signal: controller.signal,
-            headers: {
-                Accept: "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers: githubAPIHeaders(url),
         });
         if (!response.ok) {
             debug(`commits: ${repo} responded ${response.status}`, {
