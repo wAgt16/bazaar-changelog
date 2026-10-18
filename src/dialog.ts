@@ -9,6 +9,7 @@ import {t} from "./i18n";
 import type {TI18n} from "./i18n";
 import {debug} from "./logger";
 import {applyMarkdownHTML, markdownToHTML} from "./render";
+import {linkifyGitHub} from "./references";
 import type {ISettings, TChangelogSource} from "./settings";
 import {compareVersion, isSameVersion} from "./version";
 
@@ -287,6 +288,13 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const botRangeOf = (markdown: string) =>
         options.settings.botReleaseNotesAsEmpty ? parseFullChangelogOnly(markdown) : undefined;
 
+    /** 正文里的 #123、owner/repo#123 与 @user 换成 GitHub 链接，跟着设置开关走。 */
+    const linkify = (container: HTMLElement) => {
+        if (options.settings.githubReferences) {
+            linkifyGitHub(container, repo);
+        }
+    };
+
     const showRelease = async (token: number, tag: string) => {
         const release = releases.find((item) => item.tag === tag) || releases[0];
         if (!release) {
@@ -321,7 +329,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         }
         if (!applyMarkdownHTML(bodyElement, html, `${repoWebURL(repo)}/blob/${release.tag}/`)) {
             setBody(t(i18n, "releaseNotesUnavailable"));
+            return;
         }
+        linkify(bodyElement);
     };
 
     /**
@@ -363,7 +373,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             if (!offerCommits()) {
                 setBody(t(i18n, "changelogMissing"));
             }
+            return;
         }
+        linkify(bodyElement);
     };
 
     /**
@@ -501,6 +513,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const text = document.createElement("span");
         text.className = "b3-list-item__text";
         text.textContent = commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage");
+        linkify(text);
         first.append(text);
         row.append(first);
         const meta = document.createElement("span");
@@ -512,6 +525,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const detail = document.createElement("div");
         detail.className = `${CLASS}__commit-detail fn__none`;
         detail.textContent = commit.message.trim() || t(i18n, "commitNoMessage");
+        linkify(detail);
         if (metaText) {
             // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
             const note = document.createElement("div");

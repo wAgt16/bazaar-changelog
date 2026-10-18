@@ -29,6 +29,7 @@ export default class ReleaseNotePlugin extends Plugin {
     private accelerationElement: HTMLInputElement | undefined;
     private accelerationURLElement: HTMLInputElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
+    private referencesElement: HTMLInputElement | undefined;
     private debugElement: HTMLInputElement | undefined;
 
     override async onload() {
@@ -67,6 +68,18 @@ export default class ReleaseNotePlugin extends Plugin {
                 element.className = "b3-switch";
                 element.checked = this.settings.botReleaseNotesAsEmpty;
                 this.botReleaseNotesElement = element;
+                return element;
+            },
+        });
+        this.setting.addItem({
+            title: t(this.texts(), "githubReferences"),
+            description: t(this.texts(), "githubReferencesTip"),
+            createActionElement: () => {
+                const element = document.createElement("input");
+                element.type = "checkbox";
+                element.className = "b3-switch";
+                element.checked = this.settings.githubReferences;
+                this.referencesElement = element;
                 return element;
             },
         });
@@ -221,6 +234,7 @@ export default class ReleaseNotePlugin extends Plugin {
             githubAcceleration: this.accelerationElement?.checked,
             githubAccelerationURL: this.accelerationURLElement?.value,
             botReleaseNotesAsEmpty: this.botReleaseNotesElement?.checked,
+            githubReferences: this.referencesElement?.checked,
             debug: this.debugElement?.checked,
         });
         if (!(await this.persistSettings(next))) {
@@ -265,6 +279,9 @@ export default class ReleaseNotePlugin extends Plugin {
         }
         if (this.botReleaseNotesElement) {
             this.botReleaseNotesElement.checked = this.settings.botReleaseNotesAsEmpty;
+        }
+        if (this.referencesElement) {
+            this.referencesElement.checked = this.settings.githubReferences;
         }
         if (this.debugElement) {
             this.debugElement.checked = this.settings.debug;

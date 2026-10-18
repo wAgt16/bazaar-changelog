@@ -10,6 +10,8 @@ export interface ISettings {
     githubAccelerationURL: string;
     /** 把只有 Full Changelog 链接的发行说明当成「该版本没有发行说明」。 */
     botReleaseNotesAsEmpty: boolean;
+    /** 把 #123、owner/repo#123 与 @user 渲染成指向 GitHub 的链接。 */
+    githubReferences: boolean;
     /** 是否在控制台输出本插件的完整过程日志。 */
     debug: boolean;
 }
@@ -19,6 +21,7 @@ export const DEFAULT_SETTINGS: ISettings = {
     githubAcceleration: false,
     githubAccelerationURL: "https://gh-proxy.com/",
     botReleaseNotesAsEmpty: true,
+    githubReferences: true,
     debug: false,
 };
 
@@ -33,6 +36,7 @@ export const mergeSettings = (saved: unknown): ISettings => {
         githubAccelerationURL: typeof url === "string" ? url.trim() : DEFAULT_SETTINGS.githubAccelerationURL,
         // 这一项默认是开的，只有明确存了 false 才关
         botReleaseNotesAsEmpty: value.botReleaseNotesAsEmpty !== false,
+        githubReferences: value.githubReferences !== false,
         debug: value.debug === true,
     };
 };
