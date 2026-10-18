@@ -18,8 +18,8 @@ export type TCommitsResult =
     | {status: "empty"}
     /** 超过本次超时。 */
     | {status: "timeout"}
-    /** 其他失败（网络错误、HTTP 错误码、限流）；`forbidden` 表示对方回了 403。 */
-    | {status: "error", forbidden?: boolean};
+    /** 其他失败（网络错误、HTTP 错误码、限流）；调用方不区分类别，失败就是失败。 */
+    | {status: "error"};
 
 const COMMITS_API = "https://api.github.com";
 /** 和发行说明同一个缓存窗口：仓库的历史不会在半小时里变样。 */
@@ -57,9 +57,12 @@ const toCommit = (item: IGithubCommit): ICommit | undefined => {
     };
 };
 
+/** compare 的提交是旧的在前，列表接口是新的在前；地址与排序都得看这个区分。 */
+const usesCompare = (base: string, head: string): boolean => Boolean(base) && base !== head;
+
 /** 地址：有起点用 compare，没有起点就列该端点最近的提交。 */
 const buildURL = (repo: string, base: string, head: string): string => {
-    if (base && base !== head) {
+    if (usesCompare(base, head)) {
         return `${COMMITS_API}/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`;
     }
     const suffix = head && head !== "HEAD" ? `&sha=${encodeURIComponent(head)}` : "";
@@ -107,12 +110,11 @@ export const fetchCommits = async (
         if (!response.ok) {
             debug(`commits: ${repo} responded ${response.status}`, {
                 elapsed: Date.now() - started,
-                forbidden: response.status === 403,
                 rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),
                 rateLimitReset: response.headers.get("x-ratelimit-reset"),
             });
-            // 403 多半是被限流或反代拦下，弹窗要能据此给出更具体的提示
-            return {status: "error", forbidden: response.status === 403};
+            // 反代不代理 compare 时回的码五花八门，这里不区分：失败就是失败
+            return {status: "error"};
         }
         const payload: unknown = await response.json();
         // compare 回 {commits, total_commits}，列表接口直接回数组
@@ -125,9 +127,12 @@ export const fetchCommits = async (
         const commits = list
             .filter((item): item is IGithubCommit => Boolean(item) && typeof item === "object")
             .map(toCommit)
-            .filter((item): item is ICommit => Boolean(item))
-            // compare 与列表接口都是旧的在前，弹窗里按新的在前看
-            .reverse();
+            .filter((item): item is ICommit => Boolean(item));
+        // compare 与列表接口的方向相反（旧的在前 / 新的在前），弹窗里统一按新的在前看；
+        // 无脑反转会让「不限 → HEAD」那一屏从旧到新
+        if (usesCompare(range.base, range.head)) {
+            commits.reverse();
+        }
         const reported = payload && typeof payload === "object" ?
             (payload as {total_commits?: unknown}).total_commits : undefined;
         const total = typeof reported === "number" && reported > 0 ? reported : commits.length;

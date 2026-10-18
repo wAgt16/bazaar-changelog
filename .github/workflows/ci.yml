@@ -1,0 +1,40 @@
+name: CI
+
+# 每次推送到 main / dev、以及所有 PR 都跑一遍：类型检查、测试（带覆盖率门槛）、构建。
+# 发版仍由 cd.yml 负责，两者互不依赖。
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # 覆盖率门槛写在 vitest.config.ts 里，掉下去会直接失败
+      - name: Test
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build

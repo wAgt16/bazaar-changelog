@@ -540,19 +540,31 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (result.status === "error") {
-            // 开了加速还回 403：多半是反代不代理 compare 接口，直说，别让用户以为版本选错了
-            const hint = result.forbidden && options.settings.githubAcceleration ?
-                t(i18n, "commitsForbiddenViaAcceleration") : "";
+            // 反代不代理 compare 接口时回的码五花八门（403 / 404 / 502 都有），所以不看状态码：
+            // 只要开了加速又没拿到就提示。直连失败多半是限流或网络，那句话会把人带偏，因此不加。
+            const hint = options.settings.githubAcceleration ? t(i18n, "commitsAccelerationUnsupported") : "";
+            // compare 取不到时列表接口往往还能用：「不限 → HEAD」走的就是 /commits
+            const offered = range.base !== "" || range.head !== "HEAD";
             debug("commits: failed", {
-                forbidden: result.forbidden,
+                range,
                 acceleration: options.settings.githubAcceleration,
                 hint: Boolean(hint),
+                fallback: offered,
             });
-            if (hint) {
-                setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
-            } else {
-                setBody(t(i18n, "commitsUnavailable"));
+            if (!offered) {
+                if (hint) {
+                    setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
+                } else {
+                    setBody(t(i18n, "commitsUnavailable"));
+                }
+                return;
             }
+            setBodyWithAction(t(i18n, "commitsUnavailable"), t(i18n, "commitsToHead"), () => {
+                debug("commits: falling back to the commits up to HEAD");
+                fromElement.value = "";
+                toElement.value = "HEAD";
+                void loadCommits(++requestID);
+            }, hint);
             return;
         }
         renderCommits(result.commits, result.total);
@@ -617,20 +629,16 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const countElement = document.createElement("div");
         countElement.className = `${CLASS}__hint`;
         countElement.textContent = t(i18n, "commitsCount", {count: String(total)});
+        // compare 一次最多给 250 条：显示的总数比实际列出的多时，就在这一行后面补一句，
+        // 摆在列表下面得翻过几百行才看得见
+        if (total > commits.length) {
+            countElement.append(t(i18n, "commitsTruncated", {count: String(commits.length)}));
+        }
         // .b3-list--background 带来思源原生的行悬停底色与圆角
         const list = document.createElement("div");
         list.className = `b3-list b3-list--background ${CLASS}__commits`;
         commits.forEach((commit) => list.append(commitItem(commit)));
-        const fragment = document.createDocumentFragment();
-        fragment.append(countElement, list);
-        if (total > commits.length) {
-            // compare 最多给 250 条，剩下的让用户去 GitHub 看
-            const note = document.createElement("div");
-            note.className = `${CLASS}__hint`;
-            note.textContent = t(i18n, "commitsTruncated", {count: String(commits.length)});
-            fragment.append(note);
-        }
-        bodyElement.replaceChildren(fragment);
+        bodyElement.replaceChildren(countElement, list);
     };
 
     const startSource = (token: number, autoSwitch: boolean) => {

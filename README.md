@@ -78,9 +78,11 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   decides the "Latest" mark and filters out releases the bazaar index has not seen.
 - **Commits**: the GitHub Compare API
   (`https://api.github.com/repos/<owner>/<repo>/compare/<base>...<head>`); with the start version set
-  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Compare returns
-  at most 250 commits and the note under the list says so when that limit is hit. One request per
-  repository per 30 minutes, and a timeout can still be retried.
+  to "Any" it uses `/commits` instead and lists the newest 100 commits of that endpoint. Commits are
+  always listed newest first (the two endpoints return opposite orders on GitHub's side). Compare returns
+  at most 250 commits and the note after the "Listing N commits" count says so when that limit is hit. One
+  request per repository per 30 minutes, and a timeout can still be retried; when the request fails the
+  dialog offers "List commits up to HEAD", which retries through `/commits`.
 - **Markdown rendering**: the kernel `/api/lute/md2html`, the same Lute pipeline the bazaar README
   uses, followed by DOMPurify.
 
@@ -95,9 +97,11 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   decrypt it. It guards against a settings file being pasted somewhere on its own.
 - A commit list shows at most 250 commits (the compare API limit); older commits have to be looked at
   on GitHub.
-- With GitHub acceleration on, some proxies do not forward the `compare` endpoint (403), so the commit
-  list cannot be loaded; the dialog says "The GitHub acceleration service may not support fetching
-  commits for the selected range" — turn acceleration off to read them directly.
+- With GitHub acceleration on, some proxies do not forward the `compare` endpoint, so the commit list
+  cannot be loaded (whatever status the proxy answers with); the dialog says "The GitHub acceleration
+  service may not support fetching commits for the selected range" and offers "List commits up to HEAD",
+  which uses the `/commits` endpoint the proxy usually does forward. Turning acceleration off to read
+  them directly also works.
 - Both the "Latest" mark and the version filter depend on the bazaar index, which refreshes every
   1–3 hours.
 - Update confirmation relies on SiYuan's own bazaar update flow. If SiYuan changes that flow the
