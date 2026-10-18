@@ -5,7 +5,7 @@ import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
 import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
 import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
-import type {IRelease} from "./github";
+import type {IRelease, TFailureReason} from "./github";
 import {t} from "./i18n";
 import type {TI18n} from "./i18n";
 import {debug} from "./logger";
@@ -81,6 +81,8 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     /** 发行版列表取过一次没有；取失败也算过，免得每次切来源都重打一次接口。 */
     let tagListLoaded = false;
     let releaseStatus: "ok" | "missing" | "timeout" | "error" | undefined;
+    /** 发行版列表这次没拿到时的原因，写进第二行小字。 */
+    let releaseReason: TFailureReason | undefined;
     /** 起始/终止版本下拉是否已经按默认值填过，用户选过之后就不再抢他的选择。 */
     let rangeInitialized = false;
     /** CHANGELOG 命中的文件路径；拿到之前「在 GitHub 中打开」没有地址可用。 */
@@ -179,6 +181,30 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         hintElement.className = `${CLASS}__hint`;
         hintElement.textContent = hint;
         bodyElement.replaceChildren(line, hintElement);
+    };
+    /**
+     * 这次没拿到的人话原因，三个来源共用。只说最常见的几种含义，其余照实报状态码，
+     * 不把 `TypeError: Failed to fetch` 这类原文丢给用户。
+     */
+    const reasonText = (reason: TFailureReason): string => {
+        if (reason.kind === "network") {
+            return t(i18n, "reasonNetwork");
+        }
+        if (reason.kind === "payload") {
+            return t(i18n, "reasonPayload");
+        }
+        if (reason.status === 403 || reason.status === 429) {
+            return t(i18n, "reasonRefused", {status: String(reason.status)});
+        }
+        return t(i18n, "reasonStatus", {status: String(reason.status)});
+    };
+    /** 有原因就写成第二行小字，没有原因可给时只留主提示。 */
+    const setBodyWithReason = (text: string, reason?: TFailureReason) => {
+        if (reason) {
+            setBodyWithHint(text, reasonText(reason));
+            return;
+        }
+        setBody(text);
     };
     /** 提示后面挂一个链接样式的按钮；`hint` 是第二行的补充说明。 */
     const setBodyWithAction = (text: string, action: string, onAction: () => void, hint?: string) => {
@@ -283,6 +309,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         tagListLoaded = true;
         const result = await fetchReleases(repo, options.settings, timeoutMs);
         releaseStatus = result.status;
+        releaseReason = result.status === "error" ? result.reason : undefined;
         const list = result.status === "ok" ? result.releases : [];
         allReleases = list;
         releases = keepKnown(list);
@@ -392,8 +419,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     };
 
     /**
-     * CHANGELOG。`autoSwitch` 只在首次打开时为真：默认看 CHANGELOG 但这个仓库没有时，
-     * 本次自动改回发行说明；用户之后手动切过来不再抢他的选择。
+     * CHANGELOG。`autoSwitch` 只在首次打开时为真：默认看 CHANGELOG 而三个候选都 404 时，
+     * 本次自动改看发行说明；用户之后手动切过来不再抢他的选择。
+     * 取不到（超时、403、5xx）不换来源：那只是这次没拿到，换过去只会再失败一次。
      */
     const loadChangelog = async (token: number, autoSwitch: boolean) => {
         debug(`CHANGELOG: loading for ${repo}`, {autoSwitch, timeoutMs});
@@ -405,15 +433,21 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (result.status === "timeout") {
-            // 超时不自动换来源：多半是同一条线路慢，让用户点「重新获取」
+            // 有确定的失败原因（连不上 / 403 / 5xx）时别把失败写成「超时」；
+            // 两种都留在 CHANGELOG，不换成别的来源
+            if (result.reason) {
+                setBodyWithRetry(t(i18n, "changelogUnavailable"), reasonText(result.reason));
+                return;
+            }
             setBodyWithRetry(t(i18n, "changelogTimeout"), t(i18n, "changelogTimeoutHint"));
             return;
         }
         if (result.status === "missing") {
             changelogMissing = true;
             if (autoSwitch) {
+                // 确实没有这个文件：本次自动改看发行说明，来源下拉跟着一起动
                 debug("CHANGELOG: missing, falling back to the release notes");
-                await loadReleaseNotes(token, false);
+                switchSource("releaseNotes", token);
                 return;
             }
             // 发行说明刚才也确认没有这一版时，两句话合成一句，并指向第三来源
@@ -438,8 +472,9 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     };
 
     /**
-     * 发行说明。`autoSwitch` 只在首次打开时为真：集市这一版没有发行说明时，
+     * 发行说明。`autoSwitch` 只在首次打开时为真：集市这一版确实没有发行说明时，
      * 本次自动改看 CHANGELOG；用户之后手动切回来不再抢他的选择。
+     * 接口没给出发行版列表时留在发行说明：取不到不等于没有。
      */
     const loadReleaseNotes = async (token: number, autoSwitch: boolean) => {
         debug(`release notes: loading for ${repo}`, {version: options.version, autoSwitch, timeoutMs});
@@ -451,7 +486,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (releaseStatus === "timeout") {
-            // 超时不自动换来源：多半是同一条线路慢，让用户点「重新获取」
+            // 没拿到就是没拿到：留在发行说明，让用户点「重新获取」，不换成别的来源
             setBodyWithRetry(t(i18n, "releaseNotesTimeout"));
             return;
         }
@@ -459,11 +494,12 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             releases.find((item) => isSameVersion(item.tag, options.version)) : releases[0];
         // 自动生成的发行说明只有一行 Full Changelog 链接：等同于这一版没有内容，但它自带范围
         const botRange = matched ? botRangeOf(matched.markdown) : undefined;
-        // 这一版在列表里找不到，或者找到了但正文是空的：首次打开据此回退
+        // 这一版在列表里找不到，或者找到了但正文是空的
         const nothingForVersion = !matched || !matched.markdown.trim() || Boolean(botRange);
-        // 但接口出错时的空列表只说明这次没拿到，不能替用户断言「这一版没有发行说明」；
-        // 拿到列表才更新这个结论，出错时保留上一次的确定性结果
-        if (releaseStatus !== "error") {
+        // 接口出错时的空列表只说明这次没拿到：既不更新「这一版没有发行说明」这个结论，
+        // 也不据此换来源 —— 那会把「取不到」伪装成「没有」。拿到列表才算数。
+        const known = releaseStatus !== "error";
+        if (known) {
             releaseNotesMissing = nothingForVersion;
         }
         debug(`release notes: ${releases.length} kept`, {
@@ -473,7 +509,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             missing: releaseNotesMissing,
             fullChangelogOnly: botRange,
         });
-        if (autoSwitch && nothingForVersion) {
+        if (autoSwitch && known && nothingForVersion) {
             if (botRange) {
                 // 只有 Full Changelog 链接时直接去看它指向的那段提交，比空提示有用
                 debug("release notes: only a Full Changelog link, showing its commit range instead", botRange);
@@ -482,13 +518,20 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
                 return;
             }
             debug("release notes: nothing for the bazaar version, falling back to the CHANGELOG");
-            await loadChangelog(token, false);
+            switchSource("changelog", token);
             return;
         }
         if (releases.length === 0) {
-            if (!offerCommits()) {
-                setBody(t(i18n, "releaseNotesUnavailable"));
+            if (offerCommits()) {
+                return;
             }
+            // 接口出错是「这次没拿到」，原因写在小字；拿到列表却没有可显示的版本，
+            // 按「该版本没有发行说明」处理 —— 上架集市的包不会一个发行版都没有
+            if (releaseStatus === "error") {
+                setBodyWithReason(t(i18n, "releaseNotesUnavailable"), releaseReason);
+                return;
+            }
+            setBody(t(i18n, "releaseNotesEmpty"));
             return;
         }
         fillVersionElement();
@@ -540,23 +583,21 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             return;
         }
         if (result.status === "error") {
-            // 反代不代理 compare 接口时回的码五花八门（403 / 404 / 502 都有），所以不看状态码：
-            // 只要开了加速又没拿到就提示。直连失败多半是限流或网络，那句话会把人带偏，因此不加。
-            const hint = options.settings.githubAcceleration ? t(i18n, "commitsAccelerationUnsupported") : "";
+            // 开了加速时不管对方回什么状态码都可能是反代不代理 compare 接口，所以不看状态码；
+            // 直连失败多半是限流或网络，那句话会把人带偏，因此不加
+            const reason = reasonText(result.reason);
+            const hint = options.settings.githubAcceleration ?
+                t(i18n, "commitsAccelerationUnsupported", {reason}) : reason;
             // compare 取不到时列表接口往往还能用：「不限 → HEAD」走的就是 /commits
             const offered = range.base !== "" || range.head !== "HEAD";
             debug("commits: failed", {
                 range,
+                reason: result.reason,
                 acceleration: options.settings.githubAcceleration,
-                hint: Boolean(hint),
                 fallback: offered,
             });
             if (!offered) {
-                if (hint) {
-                    setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
-                } else {
-                    setBody(t(i18n, "commitsUnavailable"));
-                }
+                setBodyWithHint(t(i18n, "commitsUnavailable"), hint);
                 return;
             }
             setBodyWithAction(t(i18n, "commitsUnavailable"), t(i18n, "commitsToHead"), () => {
@@ -652,9 +693,13 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             void loadReleaseNotes(token, autoSwitch);
         }
     };
-    /** 由弹窗自己切来源（「查看提交记录」按钮等），不触发 change 事件。 */
+    /**
+     * 由弹窗自己切来源（回退、Full Changelog 链接、「查看提交记录」按钮等），不触发 change 事件。
+     * 下拉一定要跟着动：正文换了来源而下拉还停在旧的那一项时，用户看到的提示就对不上来源了。
+     */
     const switchSource = (source: TChangelogSource, token: number) => {
         sourceElement.value = source;
+        fitSelectWidth(sourceElement);
         startSource(token, false);
     };
 

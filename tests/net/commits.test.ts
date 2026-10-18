@@ -144,25 +144,25 @@ describe("fetchCommits 的响应", () => {
             .toEqual({status: "empty"});
     });
 
-    it("任何 HTTP 错误码都算失败，不区分是哪一种", async () => {
+    it("任何 HTTP 错误码都算失败，原因是状态码", async () => {
         stubFetch(() => mockResponse({}, {status: 403}));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error"});
+            .toEqual({status: "error", reason: {kind: "http", status: 403}});
 
         vi.resetModules();
         commits = await import("../../src/commits");
         stubFetch(() => mockResponse({}, {status: 502}));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error"});
+            .toEqual({status: "error", reason: {kind: "http", status: 502}});
     });
 
-    it("返回结构不认识时算失败", async () => {
+    it("返回结构不认识时算失败，原因是内容不认识", async () => {
         stubFetch(() => mockResponse({message: "Not Found"}));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error"});
+            .toEqual({status: "error", reason: {kind: "payload"}});
     });
 
-    it("正文不是 JSON 时算失败", async () => {
+    it("正文不是 JSON 时算失败，原因也是内容不认识", async () => {
         stubFetch(() => ({
             ok: true,
             status: 200,
@@ -173,13 +173,13 @@ describe("fetchCommits 的响应", () => {
             },
         }));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error"});
+            .toEqual({status: "error", reason: {kind: "payload"}});
     });
 
-    it("网络错误算失败", async () => {
+    it("网络错误算失败，原因是网络", async () => {
         stubFetch(() => Promise.reject(new Error("offline")));
         expect(await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000))
-            .toEqual({status: "error"});
+            .toEqual({status: "error", reason: {kind: "network"}});
     });
 
     it("超过本次超时返回 timeout 并取消请求", async () => {

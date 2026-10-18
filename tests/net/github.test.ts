@@ -161,19 +161,22 @@ describe("fetchReleases", () => {
         expect(await github.fetchReleases("owner/repo", settings(), 3000)).toEqual({status: "missing"});
     });
 
-    it("返回的不是数组时算失败", async () => {
+    it("返回的不是数组时算失败，原因是内容不认识", async () => {
         stubFetch(() => mockResponse({message: "rate limited"}));
-        expect(await github.fetchReleases("owner/repo", settings(), 3000)).toEqual({status: "error"});
+        expect(await github.fetchReleases("owner/repo", settings(), 3000))
+            .toEqual({status: "error", reason: {kind: "payload"}});
     });
 
-    it("HTTP 错误码算失败", async () => {
+    it("HTTP 错误码算失败，原因是状态码", async () => {
         stubFetch(() => mockResponse({}, {status: 403}));
-        expect(await github.fetchReleases("owner/repo", settings(), 3000)).toEqual({status: "error"});
+        expect(await github.fetchReleases("owner/repo", settings(), 3000))
+            .toEqual({status: "error", reason: {kind: "http", status: 403}});
     });
 
-    it("网络错误算失败", async () => {
+    it("网络错误算失败，原因是网络", async () => {
         stubFetch(() => Promise.reject(new Error("offline")));
-        expect(await github.fetchReleases("owner/repo", settings(), 3000)).toEqual({status: "error"});
+        expect(await github.fetchReleases("owner/repo", settings(), 3000))
+            .toEqual({status: "error", reason: {kind: "network"}});
     });
 
     it("超过本次超时返回 timeout 并取消请求", async () => {

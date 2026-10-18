@@ -1,4 +1,5 @@
 import {resolveGithubURL} from "./github";
+import type {TFailureReason} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
 import {githubAPIHeaders, willAuthorize} from "./token";
@@ -18,8 +19,8 @@ export type TCommitsResult =
     | {status: "empty"}
     /** 超过本次超时。 */
     | {status: "timeout"}
-    /** 其他失败（网络错误、HTTP 错误码、限流）；调用方不区分类别，失败就是失败。 */
-    | {status: "error"};
+    /** 其他失败（网络错误、HTTP 错误码、限流），`reason` 给弹窗写第二行小字。 */
+    | {status: "error", reason: TFailureReason};
 
 const COMMITS_API = "https://api.github.com";
 /** 和发行说明同一个缓存窗口：仓库的历史不会在半小时里变样。 */
@@ -113,16 +114,22 @@ export const fetchCommits = async (
                 rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),
                 rateLimitReset: response.headers.get("x-ratelimit-reset"),
             });
-            // 反代不代理 compare 时回的码五花八门，这里不区分：失败就是失败
-            return {status: "error"};
+            return {status: "error", reason: {kind: "http", status: response.status}};
         }
-        const payload: unknown = await response.json();
+        let payload: unknown;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            // 200 但不是 JSON：多半是反代或网关塞回来的错误页
+            debug(`commits: ${repo} body is not JSON`, {elapsed: Date.now() - started, error: String(error)});
+            return timedOut ? {status: "timeout"} : {status: "error", reason: {kind: "payload"}};
+        }
         // compare 回 {commits, total_commits}，列表接口直接回数组
         const list = Array.isArray(payload) ? payload :
             (payload && typeof payload === "object" ? (payload as {commits?: unknown}).commits : undefined);
         if (!Array.isArray(list)) {
             debug(`commits: ${repo} did not return a commit list`, {payload});
-            return {status: "error"};
+            return {status: "error", reason: {kind: "payload"}};
         }
         const commits = list
             .filter((item): item is IGithubCommit => Boolean(item) && typeof item === "object")
@@ -153,7 +160,7 @@ export const fetchCommits = async (
             timeoutMs,
             error: String(error),
         });
-        return {status: timedOut ? "timeout" : "error"};
+        return timedOut ? {status: "timeout"} : {status: "error", reason: {kind: "network"}};
     } finally {
         window.clearTimeout(timer);
     }

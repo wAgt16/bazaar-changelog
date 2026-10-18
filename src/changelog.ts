@@ -1,6 +1,10 @@
 import {resolveGithubURL} from "./github";
+import type {TFailureReason} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
+
+/** 我们自己到点取消请求时抛出来的：那是这次等够了，不是入口有问题。 */
+const isAbort = (error: unknown): boolean => (error as {name?: unknown} | null)?.name === "AbortError";
 
 /** 仓库里的 changelog 文件，三个路径同时找。 */
 const PATHS = ["CHANGELOG.md", "docs/CHANGELOG.md", "doc/CHANGELOG.md"];
@@ -21,11 +25,24 @@ export type TChangelogResult =
     | {status: "ok", markdown: string, /** 命中的那个文件路径，拿去拼 GitHub 页面地址。 */ path: string}
     /** 三个候选都明确回答「这个路径上没有文件」：这个仓库确实没有 changelog。 */
     | {status: "missing"}
-    /** 没能得出结论：超时、被限流或请求失败，不能断言「没有」，重来一次还有机会。 */
-    | {status: "timeout"};
+    /**
+     * 没能得出结论：超时、被限流或请求失败，不能断言「没有」，重来一次还有机会。
+     * 有候选**真正失败**（连不上 / 403 / 5xx）时带上原因，单纯慢而已时没有原因可给。
+     */
+    | {status: "timeout", reason?: TFailureReason};
 
 /** 入口明确回答「这个路径上没有文件」：404，或者 200 但正文是空的。 */
 class MissingFileError extends Error {}
+
+/** 入口真的出问题了（连不上 / 非 404 的错码 / 正文读不出来），带上人话原因。 */
+class RequestFailedError extends Error {
+    readonly reason: TFailureReason;
+
+    constructor(url: string, reason: TFailureReason) {
+        super(reason.kind === "http" ? `${url} responded ${reason.status}` : `${url} failed to ${reason.kind}`);
+        this.reason = reason;
+    }
+}
 
 const cache = new Map<string, {markdown: string, path: string}>();
 
@@ -81,14 +98,21 @@ export const fetchChangelog = async (repo: string, settings: ISettings, timeoutM
         return {status: "ok", markdown: hit.markdown, path: hit.path};
     } catch (error) {
         const errors: unknown[] = error instanceof AggregateError ? error.errors : [error];
-        const status = errors.length > 0 && errors.every((item) => item instanceof MissingFileError) ?
-            "missing" : "timeout";
-        debug(`CHANGELOG: ${repo} ${status}`, {
+        const missing = errors.length > 0 && errors.every((item) => item instanceof MissingFileError);
+        // 只有真正的失败才给原因：404 与本次超时取消（AbortError）都不算
+        const failures = errors
+            .filter((item) => !(item instanceof MissingFileError) && !isAbort(item))
+            .map((item) => item instanceof RequestFailedError ? item.reason : {kind: "network"} as TFailureReason);
+        debug(`CHANGELOG: ${repo} ${missing ? "missing" : "timeout"}`, {
             elapsed: Date.now() - started,
             timeoutMs,
+            reason: failures[0],
             errors: errors.map((item) => String(item)),
         });
-        return {status};
+        if (missing || failures.length === 0) {
+            return {status: missing ? "missing" : "timeout"};
+        }
+        return {status: "timeout", reason: failures[0]};
     } finally {
         window.clearTimeout(timer);
         // 没赢的那几个请求不必再等
@@ -101,16 +125,34 @@ const fetchOne = async (
     signal: AbortSignal,
     path: string,
 ): Promise<{url: string, markdown: string, path: string}> => {
-    const response = await fetch(url, {signal});
+    let response: Response;
+    try {
+        response = await fetch(url, {signal});
+    } catch (error) {
+        if (!isAbort(error)) {
+            // 连不上：DNS、连接被重置、被加速服务挡下都可能落在这一支
+            throw new RequestFailedError(url, {kind: "network"});
+        }
+        throw error;
+    }
     if (response.status === 404) {
         debug(`CHANGELOG: ${url} responded 404`);
         throw new MissingFileError(url);
     }
     if (!response.ok) {
         // 限流、5xx 都是入口的问题，据此报「没有」会骗用户
-        throw new Error(`${url} responded ${response.status}`);
+        debug(`CHANGELOG: ${url} responded ${response.status}`);
+        throw new RequestFailedError(url, {kind: "http", status: response.status});
     }
-    const markdown = await response.text();
+    let markdown: string;
+    try {
+        markdown = await response.text();
+    } catch (error) {
+        if (!isAbort(error)) {
+            throw new RequestFailedError(url, {kind: "payload"});
+        }
+        throw error;
+    }
     if (!markdown.trim()) {
         debug(`CHANGELOG: ${url} is empty`);
         throw new MissingFileError(url);

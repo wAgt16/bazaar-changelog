@@ -181,11 +181,13 @@ describe("发行说明来源", () => {
         expect(mocks.fetchReleases).toHaveBeenCalledTimes(1);
     });
 
-    it("集市这一版找不到时自动回退到 CHANGELOG", async () => {
+    it("集市这一版找不到时自动回退到 CHANGELOG，来源下拉跟着走", async () => {
         mocks.fetchChangelog.mockResolvedValue({status: "ok", markdown: "# 变更记录", path: "CHANGELOG.md"});
         open({version: "9.9.9"});
         await expectBody("# 变更记录");
         expect(mocks.fetchChangelog).toHaveBeenCalledTimes(1);
+        // 下拉停在「发行说明」的话，用户看到的正文和来源就对不上了
+        expect(control<HTMLSelectElement>("source").value).toBe("changelog");
     });
 
     it("这一版正文为空时同样回退到 CHANGELOG", async () => {
@@ -233,10 +235,11 @@ describe("CHANGELOG 来源", () => {
         );
     });
 
-    it("仓库没有 CHANGELOG 时首次打开回退到发行说明", async () => {
+    it("仓库没有 CHANGELOG 时首次打开回退到发行说明，来源下拉跟着走", async () => {
         open({settings: settings({preferredSource: "changelog"})});
         await expectBody("修了 #12");
         expect(mocks.fetchChangelog).toHaveBeenCalledTimes(1);
+        expect(control<HTMLSelectElement>("source").value).toBe("releaseNotes");
     });
 
     it("超时提示分两行：主提示 + 可能是网络也可能确实没有", async () => {
@@ -343,18 +346,14 @@ describe("提交记录来源", () => {
         await expectBody("这段范围内没有提交");
     });
 
-    it("获取失败时的提示", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error"});
-        open({settings: settings({preferredSource: "commits"})});
-        await expectBody("无法获取提交记录");
-        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")).toBeNull();
-    });
-
-    it("失败时给一个一键改成「不限 → HEAD」的入口", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error"});
+    it("获取失败时给原因，并在提示后面挂一个一键改成「不限 → HEAD」的入口", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "network"}});
         open({settings: settings({preferredSource: "commits"})});
         await expectBody("无法获取提交记录");
         expect(mocks.fetchCommits.mock.calls[0][1]).toEqual({base: "v1.2.2", head: "v1.2.3"});
+        expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("网络错误，未能连接 GitHub");
 
         mocks.fetchCommits.mockResolvedValue({status: "ok", commits: commits(), total: 2});
         click(control("action"));
@@ -364,28 +363,31 @@ describe("提交记录来源", () => {
         expect(mocks.fetchCommits.mock.calls[1][1]).toEqual({base: "", head: "HEAD"});
     });
 
-    it("范围本来就不限到 HEAD 时不再给这个入口", async () => {
+    it("范围本来就不限到 HEAD 时不再给这个入口，但原因照给", async () => {
         mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
-        mocks.fetchCommits.mockResolvedValue({status: "error"});
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 429}});
         open({settings: settings({preferredSource: "commits"})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector('[data-type="action"]')).toBeNull();
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("请求被拒绝（429），可能是限流");
     });
 
-    it("开了加速时任何状态码的失败都多给一句提示", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error"});
+    it("开了加速时把原因并进那句话、任何状态码都算", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 404}});
         open({settings: settings({preferredSource: "commits", githubAcceleration: true})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
-            .toBe("GitHub 加速服务可能不支持获取选定版本范围的提交");
+            .toBe("GitHub 加速服务可能不支持获取选定版本范围的提交（GitHub 返回 404）");
         expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
-    it("没开加速时不加那句提示", async () => {
-        mocks.fetchCommits.mockResolvedValue({status: "error"});
+    it("没开加速时只给原因，不甩锅给加速", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 403}});
         open({settings: settings({preferredSource: "commits", githubAcceleration: false})});
         await expectBody("无法获取提交记录");
-        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")).toBeNull();
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("请求被拒绝（403），可能是限流");
         expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
@@ -504,13 +506,52 @@ describe("来源切换", () => {
         expect(requiredDialog().querySelector('[data-type="action"]')).toBeNull();
     });
 
-    it("一个发行版都没有时提示无法获取发行说明", async () => {
-        mocks.fetchReleases.mockResolvedValue({status: "ok", releases: []});
+    it("发行版列表为空时同样按「该版本没有发行说明」处理", async () => {
+        mocks.fetchReleases.mockResolvedValue({status: "missing"});
         open({settings: settings({preferredSource: "commits"})});
         await expectBody("列出 2 条提交");
 
         await switchTo("releaseNotes");
+        await expectBody("该版本没有发行说明");
+    });
+
+    it("发行说明取不到时留在发行说明并把原因写在第二行", async () => {
+        mocks.fetchReleases.mockResolvedValue({status: "error", reason: {kind: "http", status: 403}});
+        open({settings: settings({preferredSource: "releaseNotes"})});
+        // 取不到不等于没有：不换来源，也不去读 CHANGELOG
         await expectBody("无法获取发行说明");
+        expect(control<HTMLSelectElement>("source").value).toBe("releaseNotes");
+        expect(mocks.fetchChangelog).not.toHaveBeenCalled();
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("请求被拒绝（403），可能是限流");
+    });
+
+    it("发行说明取不到但用户手动切到 CHANGELOG 时照常读 CHANGELOG", async () => {
+        mocks.fetchReleases.mockResolvedValue({status: "error", reason: {kind: "network"}});
+        mocks.fetchChangelog.mockResolvedValue({status: "ok", markdown: "CHANGELOG 正文", path: "CHANGELOG.md"});
+        open({settings: settings({preferredSource: "releaseNotes"})});
+        await expectBody("无法获取发行说明");
+
+        await switchTo("changelog");
+        await expectBody("CHANGELOG 正文");
+    });
+
+    it("CHANGELOG 取不到时留在 CHANGELOG 并给原因与「重新获取」", async () => {
+        mocks.fetchChangelog.mockResolvedValue({status: "timeout", reason: {kind: "http", status: 503}});
+        open({settings: settings({preferredSource: "changelog"})});
+        await expectBody("无法获取 CHANGELOG");
+        expect(control<HTMLSelectElement>("source").value).toBe("changelog");
+        expect(control("action").textContent).toBe("重新获取");
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("GitHub 返回 503");
+    });
+
+    it("CHANGELOG 只是慢时仍然说超时，并保留原来那句两可的说明", async () => {
+        mocks.fetchChangelog.mockResolvedValue({status: "timeout"});
+        open({settings: settings({preferredSource: "changelog"})});
+        await expectBody("获取 CHANGELOG 超时");
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("网络状况差或这个仓库没有 CHANGELOG");
     });
 
     it("CHANGELOG 没拿到时「在 GitHub 中打开」不可用", async () => {
