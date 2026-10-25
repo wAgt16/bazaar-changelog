@@ -13,7 +13,7 @@ npm install
 npm run typecheck   # 静态检查
 npm test            # 单元与 DOM 测试；带覆盖率用 npm run test:coverage
 npm run build       # 产出 dist/ 与 package.zip
-npm run check       # 上面三步一起跑，CI 跑的就是它
+npm run check       # 上面三步一起跑；CI 分开跑 typecheck / test:coverage / build
 npm run icon        # assets/icon.svg -> assets/icon.png
 npm run preview     # 预览图截图，首次需 npx playwright install chromium
 

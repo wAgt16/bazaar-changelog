@@ -226,6 +226,7 @@
 // 这里只覆盖原生抽屉 60vh 的上限（高度由 drawer.ts 按视口比例写成行内值）。
 // 原生规则的选择器是两个类，这里把类名重复一次压过它，免得依赖两张样式表的先后顺序。
 .mobile-bottom-sheet-dialog.mobile-bottom-sheet-dialog .bazaar-release-notes--drawer {
+  // 首帧兜底：bind 之后高度由 drawer.ts 按视口比例（DEFAULT_RATIO）写成行内值
   height: 70vh;
   max-height: none;
   padding-top: 0;
