@@ -137,9 +137,22 @@
       white-space: nowrap;
     }
 
+    // 右侧的「头像 + 名字 · 日期」是一组，头像紧贴名字左边，两者居中对齐
     .b3-list-item__meta {
-      margin-left: 0;
+      align-items: center;
+      display: inline-flex;
+      gap: 6px;
+      margin-left: 8px;
     }
+  }
+
+  // 圆形提交者头像：出现在名字左边（窄屏时跟着作者与日期挪进展开的提交信息）
+  &__avatar {
+    border-radius: 50%;
+    flex: 0 0 auto;
+    height: 16px;
+    object-fit: cover;
+    width: 16px;
   }
 
   // 短哈希固定占一列，各行的哈希因此左对齐；列宽写成 min-width，
@@ -169,11 +182,13 @@
     word-break: break-word;
   }
 
-  // 作者与提交时间：窄屏上不占行内那一列，改显示在展开的提交信息末尾
+  // 作者与提交时间（窄屏时连头像一起）：行内不占位置，改显示在展开的提交信息末尾
   &__commit-detail-meta {
+    align-items: center;
     color: var(--b3-theme-on-surface);
     display: none;
     font-family: var(--b3-font-family);
+    gap: 6px;
     margin-top: 6px;
   }
 
@@ -185,7 +200,7 @@
     }
 
     &__commit-detail-meta {
-      display: block;
+      display: flex;
     }
   }
 }

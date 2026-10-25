@@ -41,12 +41,14 @@ const commits = () => [
         message: "fix: second\n\n更多说明",
         author: "Bob",
         date: "2024-02-02T10:00:00Z",
+        avatar: "https://avatars.githubusercontent.com/u/2?v=4",
     },
     {
         sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         message: "first",
         author: "Alice",
         date: "2024-01-01T10:00:00Z",
+        avatar: "",
     },
 ];
 
@@ -425,6 +427,43 @@ describe("提交记录来源", () => {
             .toBe("https://github.com/owner/repo/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         expect(first.querySelector(".b3-list-item__text")?.textContent).toBe("fix: second");
         expect(first.querySelector(".b3-list-item__meta")?.textContent).toBe("Bob · 2024-02-02");
+    });
+
+    it("提交者头像：显示在提交者名字左边，取不到时摘掉", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        // 行的最左是哈希列，头像跟着作者名字走
+        expect(row.querySelector(".b3-list-item")?.firstElementChild?.className)
+            .toBe("bazaar-release-notes__hash");
+        const meta = row.querySelector(".b3-list-item__meta") as HTMLElement;
+        const avatar = meta.querySelector("img.bazaar-release-notes__avatar") as HTMLImageElement;
+        expect(avatar).not.toBeNull();
+        expect(avatar.src).toBe("https://avatars.githubusercontent.com/u/2?v=4");
+        expect(avatar.alt).toBe("");
+        // 头像在名字前面
+        expect(meta.firstElementChild).toBe(avatar);
+        expect(meta.textContent).toBe("Bob · 2024-02-02");
+        // 一开始就是显示着的：先藏起来的话懒加载可能永远不取图
+        expect(avatar.classList.contains("fn__none")).toBe(false);
+        avatar.dispatchEvent(new Event("error"));
+        expect(avatar.classList.contains("fn__none")).toBe(true);
+
+        // 窄屏时这一组挪进展开的提交信息，头像跟着一起过去
+        const note = row.querySelector(".bazaar-release-notes__commit-detail-meta") as HTMLElement;
+        expect(note.querySelector("img.bazaar-release-notes__avatar")).not.toBeNull();
+        expect(note.textContent).toBe("Bob · 2024-02-02");
+    });
+
+    it("没有头像的提交只在名字那一列显示名字与日期", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+
+        const second = requiredDialog().querySelectorAll(".bazaar-release-notes__commit")[1] as HTMLElement;
+        const meta = second.querySelector(".b3-list-item__meta") as HTMLElement;
+        expect(meta.querySelector("img")).toBeNull();
+        expect(meta.textContent).toBe("Alice · 2024-01-01");
     });
 
     it("点一行展开完整提交信息，点里面的链接不展开", async () => {

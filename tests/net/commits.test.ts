@@ -14,10 +14,14 @@ const API = "https://api.github.com/repos/owner/repo";
 const rawCommits = [
     {
         sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        author: {avatar_url: "https://avatars.githubusercontent.com/u/1?v=4"},
         commit: {message: "first\n\nbody", author: {name: "Alice", date: "2024-01-01T10:00:00Z"}},
     },
     {
         sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        // 没关联到账号：author 是 null，头像只能从 committer 那一侧拿
+        author: null,
+        committer: {avatar_url: "https://avatars.githubusercontent.com/u/2?v=4"},
         commit: {message: "second", author: {name: "Bob", date: "2024-02-02T10:00:00Z"}},
     },
 ];
@@ -82,10 +86,41 @@ describe("fetchCommits 的响应", () => {
             status: "ok",
             total: 2,
             commits: [
-                {sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", message: "second", author: "Bob", date: "2024-02-02T10:00:00Z"},
-                {sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", message: "first\n\nbody", author: "Alice", date: "2024-01-01T10:00:00Z"},
+                {
+                    sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    message: "second",
+                    author: "Bob",
+                    date: "2024-02-02T10:00:00Z",
+                    avatar: "https://avatars.githubusercontent.com/u/2?v=4",
+                },
+                {
+                    sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    message: "first\n\nbody",
+                    author: "Alice",
+                    date: "2024-01-01T10:00:00Z",
+                    avatar: "https://avatars.githubusercontent.com/u/1?v=4",
+                },
             ],
         });
+    });
+
+    it("头像按「头像」这一项决定是否走加速，没关联账号时为空", async () => {
+        const {calls} = stubFetch(() => mockResponse([
+            {sha: "a".repeat(40), author: {avatar_url: "https://avatars.githubusercontent.com/u/1?v=4"}},
+            {sha: "b".repeat(40), commit: {message: "unlinked"}},
+        ]));
+        const accelerated = settings({
+            // 只给头像开加速：接口地址直连，头像地址走前缀
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", commits: false}),
+        });
+        const result = await commits.fetchCommits("owner/repo", {base: "", head: "HEAD"}, accelerated, 3000);
+        expect(calls[0].url).toBe(`${API}/commits?per_page=100`);
+        if (result.status === "ok") {
+            expect(result.commits.map((commit) => commit.avatar)).toEqual([
+                "https://gh-proxy.com/https://avatars.githubusercontent.com/u/1?v=4",
+                "",
+            ]);
+        }
     });
 
     it("列表接口本来就是新的在前，不再掉头，total 取实际条数", async () => {
@@ -128,7 +163,13 @@ describe("fetchCommits 的响应", () => {
         expect(result).toEqual({
             status: "ok",
             total: 1,
-            commits: [{sha: "cccccccccccccccccccccccccccccccccccccccc", message: "", author: "", date: ""}],
+            commits: [{
+                sha: "cccccccccccccccccccccccccccccccccccccccc",
+                message: "",
+                author: "",
+                date: "",
+                avatar: "",
+            }],
         });
     });
 

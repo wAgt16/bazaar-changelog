@@ -27,9 +27,11 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   reason ("Request refused (403); probably rate limiting", "Network error: could not reach GitHub").
 - **Commits default to "installed version → bazaar latest"**: the start and end versions can be changed
   in the dialog; with the start set to "Any" the newest commits of that endpoint are listed. One commit
-  per row with its 7-character short hash: the hash opens the commit on GitHub, and clicking the message
-  expands the full commit message in place (changed files are not listed). When neither release notes
-  nor the CHANGELOG has content, the hint also offers a "View commits" entry.
+  per row: the 7-character short hash on the left, then the author's round avatar, name and date on the
+  right (just the name when the avatar cannot be loaded). The hash opens the commit on GitHub, and
+  clicking the message expands the full commit
+  message in place (changed files are not listed). When neither release notes nor the CHANGELOG has
+  content, the hint also offers a "View commits" entry.
 - **Auto-generated release notes count as "no release notes"**: when the body is only a
   `Full Changelog: v1.0.1...v1.0.2` link (usually generated), the dialog opens the commit range it
   points to instead; a hand-written note with one more line is left alone.
@@ -59,7 +61,7 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 | Preferred source | Release notes | Which source the changelog dialog opens with (release notes / CHANGELOG / commits). |
 | Skip empty release notes | On | Release notes whose only line is a `Full Changelog: v1.0.1...v1.0.2` link count as no release notes, and the dialog opens that commit range instead. |
 | Link references | On | Render `#123`, `owner/repo#123` and `@user` as links to GitHub. |
-| GitHub acceleration | Off | Click "Configure" to set, in a separate window, the master switch, the acceleration URL (a prefix proxy such as `https://gh-proxy.com/`) and whether release notes, the CHANGELOG and commits each go through it. |
+| GitHub acceleration | Off | Click "Configure" to set, in a separate window, the master switch, the acceleration URL (a prefix proxy such as `https://gh-proxy.com/`) and whether release notes, the CHANGELOG, commits and avatars each go through it. |
 | GitHub token | Empty | A personal access token (PAT) for a higher `api.github.com` quota. Stored encrypted in the plugin's private storage (the key in a separate file) and only sent to `api.github.com`; with acceleration on, requests are relayed by a third-party proxy and carry no token. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |
 
@@ -87,7 +89,10 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   always listed newest first (the two endpoints return opposite orders on GitHub's side). Compare returns
   at most 250 commits and the note after the "Listing N commits" count says so when that limit is hit. One
   request per repository per 30 minutes, and a timeout can still be retried; when the request fails the
-  dialog offers "List commits up to HEAD", which retries through `/commits`.
+  dialog offers "List commits up to HEAD", which retries through `/commits`. Commit avatars come from
+  `author.avatar_url` in that payload (falling back to `committer` for unlinked commits) and live on
+  `avatars.githubusercontent.com`; the "Avatars" switch in the acceleration window decides whether they
+  go through the proxy.
 - **Markdown rendering**: the kernel `/api/lute/md2html`, the same Lute pipeline the bazaar README
   uses, followed by DOMPurify.
 
@@ -116,6 +121,9 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 - Acceleration applies per item: with only one source accelerated, the others still reach
   `api.github.com` and `raw.githubusercontent.com` directly, and both domains can be unreachable in
   mainland China.
+- Commit avatars come from `avatars.githubusercontent.com`, which can be unreachable just like those
+  two domains; when an avatar cannot be loaded its slot stays empty and the rest of the commit list is
+  unaffected.
 - The CHANGELOG has this single entry point and no second CDN to fall back on: when it is unreachable
   the dialog reports a timeout and offers a retry.
 

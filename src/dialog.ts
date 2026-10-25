@@ -611,9 +611,27 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         renderCommits(result.commits, result.total);
     };
 
+    /** 提交者头像；没有地址就不建元素，加载失败则摘掉。 */
+    const avatarImage = (commit: ICommit): HTMLImageElement | undefined => {
+        if (!commit.avatar) {
+            return undefined;
+        }
+        const avatar = document.createElement("img");
+        avatar.className = `${CLASS}__avatar`;
+        avatar.alt = "";
+        avatar.loading = "lazy";
+        avatar.referrerPolicy = "no-referrer";
+        // 一开始就显示：懒加载只对可见的图生效，先藏起来（display:none）的话浏览器可能
+        // 永远不去取这张图，也就永远等不到显示它。取不到时再摘掉。
+        avatar.addEventListener("error", () => avatar.classList.add("fn__none"));
+        avatar.src = commit.avatar;
+        return avatar;
+    };
+
     /**
-     * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，作者与日期靠右。
-     * 窄屏上没有靠右的位置，作者与日期改到展开的提交信息末尾（同一个节点，由 CSS 决定显示在哪）。
+     * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，
+     * 右侧是提交者头像、名字与日期 —— 头像紧贴在名字左边。
+     * 窄屏上没有靠右的位置，这一组改到展开的提交信息末尾（同一份内容，由 CSS 决定显示在哪）。
      * 点这一行展开完整提交信息，展开的内容与提交信息列对齐。
      */
     const commitItem = (commit: ICommit): HTMLElement => {
@@ -638,21 +656,29 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         linkify(text);
         first.append(text);
         row.append(first);
-        const meta = document.createElement("span");
-        meta.className = "b3-list-item__meta";
         const date = commit.date.slice(0, 10);
         const metaText = [commit.author, date].filter((value) => value).join(" · ");
-        meta.textContent = metaText;
+        const meta = document.createElement("span");
+        meta.className = "b3-list-item__meta";
+        const metaAvatar = avatarImage(commit);
+        if (metaAvatar) {
+            meta.append(metaAvatar);
+        }
+        meta.append(document.createTextNode(metaText));
         row.append(meta);
         const detail = document.createElement("div");
         detail.className = `${CLASS}__commit-detail fn__none`;
         detail.textContent = commit.message.trim() || t(i18n, "commitNoMessage");
         linkify(detail);
-        if (metaText) {
+        if (metaText || metaAvatar) {
             // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
             const note = document.createElement("div");
             note.className = `${CLASS}__commit-detail-meta`;
-            note.textContent = metaText;
+            const detailAvatar = avatarImage(commit);
+            if (detailAvatar) {
+                note.append(detailAvatar);
+            }
+            note.append(document.createTextNode(metaText));
             detail.append(note);
         }
         row.addEventListener("click", (event) => {
