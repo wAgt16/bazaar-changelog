@@ -83,6 +83,7 @@ describe("onload", () => {
             "链接化引用",
             "GitHub 加速",
             "GitHub 令牌",
+            "移动端底部抽屉",
             "调试模式",
         ]);
         expect(byTitle(plugin, "优先加载").value).toBe("releaseNotes");
@@ -90,6 +91,7 @@ describe("onload", () => {
         expect(byTitle(plugin, "链接化引用").value).toBe("mobile");
         // 加速改成独立窗口：设置页里只有入口按钮
         expect(byTitle(plugin, "GitHub 加速").textContent).toBe("配置");
+        expect(byTitle(plugin, "移动端底部抽屉").checked).toBe(false);
         expect(byTitle(plugin, "调试模式").checked).toBe(false);
     });
 
@@ -180,6 +182,7 @@ describe("保存设置", () => {
         byTitle(plugin, "优先加载").value = "changelog";
         byTitle(plugin, "识别空发行说明").checked = false;
         byTitle(plugin, "链接化引用").value = "off";
+        byTitle(plugin, "移动端底部抽屉").checked = true;
         byTitle(plugin, "调试模式").checked = true;
         await confirm(plugin);
 
@@ -188,6 +191,7 @@ describe("保存设置", () => {
             githubAcceleration: {...DEFAULT_ACCELERATION},
             botReleaseNotesAsEmpty: false,
             referenceLinkStyle: "off",
+            mobileDrawer: true,
             debug: true,
         });
         expect(byTitle(plugin, "优先加载").value).toBe("changelog");

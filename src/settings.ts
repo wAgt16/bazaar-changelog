@@ -32,6 +32,8 @@ export interface ISettings {
     botReleaseNotesAsEmpty: boolean;
     /** 把 #123、owner/repo#123 与 @user 渲染成指向 GitHub 的链接时的样式。 */
     referenceLinkStyle: TReferenceLinkStyle;
+    /** 移动端改用思源原生的下方抽屉展示更新日志（贴合屏幕两侧、可调高度、下拉收回）。 */
+    mobileDrawer: boolean;
     /** 是否在控制台输出本插件的完整过程日志。 */
     debug: boolean;
 }
@@ -52,6 +54,8 @@ export const DEFAULT_SETTINGS: ISettings = {
     botReleaseNotesAsEmpty: true,
     // 默认跟 GitHub 移动端一致：用户多数是在手机上翻更新日志，引用就该像手机上那样
     referenceLinkStyle: "mobile",
+    // 新功能默认关闭
+    mobileDrawer: false,
     debug: false,
 };
 
@@ -93,6 +97,7 @@ export const mergeSettings = (saved: unknown): ISettings => {
         // 旧版本是一个开/关：关掉的转成「禁用」，开着的沿用新的默认样式
         referenceLinkStyle: linkStyle === "off" || linkStyle === "mobile" || linkStyle === "web" ?
             linkStyle : value.githubReferences === false ? "off" : DEFAULT_SETTINGS.referenceLinkStyle,
+        mobileDrawer: value.mobileDrawer === true,
         debug: value.debug === true,
     };
 };

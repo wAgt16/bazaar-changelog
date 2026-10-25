@@ -2,6 +2,7 @@ import {Dialog, getFrontend, showMessage} from "siyuan";
 import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
+import {bindMobileDrawer} from "./drawer";
 import {escapeHTML} from "./escape";
 import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
 import {fetchReleases, parseFullChangelogOnly, parseGithubRepo, usesAcceleration} from "./github";
@@ -72,9 +73,13 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const i18n = options.i18n;
     const isMobile = ["mobile", "browser-mobile"].includes(getFrontend());
     const confirmable = Boolean(options.onConfirm);
+    /** 移动端可以用思源原生的下方抽屉展示；默认关，设置里手动开。 */
+    const drawer = isMobile && options.settings.mobileDrawer;
 
     currentDialog?.destroy();
     let destroyed = false;
+    /** 抽屉的手势绑定；销毁时要摘掉。 */
+    let disposeDrawer: (() => void) | undefined;
     /** 每次加载都换一个号，晚到的响应不能再改 DOM。 */
     let requestID = 0;
     let releases: IRelease[] = [];
@@ -108,11 +113,23 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         preferredSource: options.settings.preferredSource,
         confirmable,
         mobile: isMobile,
+        drawer,
     });
+
+    // 抽屉只靠下拉收回：没有右上角的关闭图标，也没有右下角的「关闭 / 取消」；
+    // 需要确认更新时保住「更新」那一个按钮，否则那一排按钮整个不要
+    const closeButton = drawer ? "" : `<button class="b3-button b3-button--cancel" data-type="close">${
+        escapeHTML(t(i18n, confirmable ? "cancel" : "close"))}</button>`;
+    const confirmButton = confirmable ? `<button class="b3-button b3-button--text" data-type="confirm">${
+        escapeHTML(t(i18n, "update"))}</button>` : "";
+    const actionRow = closeButton || confirmButton ? `<div class="b3-dialog__action">
+    ${closeButton}${closeButton && confirmButton ? `<div class="fn__space"></div>` : ""}${confirmButton}
+</div>` : "";
 
     const dialog = new Dialog({
         title: t(i18n, "changelog"),
-        width: isMobile ? "92vw" : "600px",
+        width: drawer ? "100%" : isMobile ? "92vw" : "600px",
+        hideCloseIcon: drawer,
         content: `<div class="${CLASS}__head">
     <span class="${CLASS}__label">${escapeHTML(t(i18n, "source"))}</span>
     <select class="b3-select ${CLASS}__select ${CLASS}__select--source" data-type="source">
@@ -130,13 +147,10 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     </div>
 </div>
 <div class="${CLASS}__body b3-typography">${escapeHTML(t(i18n, "loading"))}</div>
-<div class="b3-dialog__action">
-    <button class="b3-button b3-button--cancel" data-type="close">${escapeHTML(t(i18n, confirmable ? "cancel" : "close"))}</button>
-    ${confirmable ? `<div class="fn__space"></div>
-    <button class="b3-button b3-button--text" data-type="confirm">${escapeHTML(t(i18n, "update"))}</button>` : ""}
-</div>`,
+${actionRow}`,
         destroyCallback: () => {
             destroyed = true;
+            disposeDrawer?.();
             if (currentDialog === dialog) {
                 currentDialog = undefined;
             }
@@ -145,7 +159,15 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     currentDialog = dialog;
 
     // Dialog 的 containerClassName 还没进插件 API 的类型，直接给容器加类名
-    dialog.element.querySelector(".b3-dialog__container")?.classList.add(CLASS);
+    const containerElement = dialog.element.querySelector(".b3-dialog__container") as HTMLElement;
+    containerElement.classList.add(CLASS);
+    if (drawer) {
+        disposeDrawer = bindMobileDrawer({
+            dialog: dialog.element,
+            sheet: containerElement,
+            close: () => dialog.destroy(),
+        });
+    }
     const headElement = dialog.element.querySelector(`.${CLASS}__head`) as HTMLElement;
     const bodyElement = dialog.element.querySelector(`.${CLASS}__body`) as HTMLElement;
     const pick = <T extends Element>(type: string): T => headElement.querySelector(`[data-type="${type}"]`) as T;
@@ -158,7 +180,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const toElement = pick<HTMLSelectElement>("to");
     const openElement = pick<HTMLButtonElement>("open");
 
-    (dialog.element.querySelector('[data-type="close"]') as HTMLElement).addEventListener("click", () => {
+    dialog.element.querySelector('[data-type="close"]')?.addEventListener("click", () => {
         dialog.destroy();
     });
     if (confirmable) {

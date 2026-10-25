@@ -51,8 +51,13 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 - **GitHub acceleration is configured per source**: off by default, so `api.github.com` and
   `raw.githubusercontent.com` are requested directly. Click "Configure" on the plugin settings page to
   fill in one acceleration URL in a separate window and choose which requests go through it (release
-  notes, the CHANGELOG and commits each have their own switch); the master switch turns it off for all
-  of them at once.
+  notes, the CHANGELOG, commits and avatars each have their own switch); the master switch turns it off
+  for all of them at once.
+- **Mobile can use SiYuan's native bottom sheet**: off by default; once enabled in the plugin settings,
+  the changelog opens on a phone as a sheet sliding up from the bottom — flush with both screen edges,
+  most of the screen by default, drag the handle at the top to change its height and swipe down to
+  dismiss. The sheet has no close icon in the top-right corner and no close button at the bottom right
+  (the Update button stays when an update has to be confirmed).
 
 ## Settings
 
@@ -63,6 +68,7 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 | Link references | On | Render `#123`, `owner/repo#123` and `@user` as links to GitHub. |
 | GitHub acceleration | Off | Click "Configure" to set, in a separate window, the master switch, the acceleration URL (a prefix proxy such as `https://gh-proxy.com/`) and whether release notes, the CHANGELOG, commits and avatars each go through it. |
 | GitHub token | Empty | A personal access token (PAT) for a higher `api.github.com` quota. Stored encrypted in the plugin's private storage (the key in a separate file) and only sent to `api.github.com`; with acceleration on, requests are relayed by a third-party proxy and carry no token. |
+| Mobile bottom sheet | Off | Show the changelog in SiYuan's native bottom sheet on mobile: flush with both screen edges, most of the screen by default, drag the handle to change its height, swipe down to dismiss. No close button inside. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |
 
 ## Data sources
@@ -126,6 +132,9 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   unaffected.
 - The CHANGELOG has this single entry point and no second CDN to fall back on: when it is unreachable
   the dialog reports a timeout and offers a retry.
+- The mobile bottom sheet borrows SiYuan's own `.mobile-bottom-sheet-dialog` / `.mobile-bottom-sheet`
+  classes: if SiYuan changes that structure the sheet still opens, resizes and dismisses, but the
+  rounded corners and the handle fall back to a plain dialog look.
 
 ## Development
 

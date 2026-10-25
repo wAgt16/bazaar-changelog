@@ -24,12 +24,14 @@ describe("mergeSettings", () => {
             githubAcceleration: {enabled: true, url: " https://gh-proxy.com ", commits: false},
             botReleaseNotesAsEmpty: false,
             referenceLinkStyle: "web",
+            mobileDrawer: true,
             debug: true,
         })).toEqual({
             preferredSource: "changelog",
             githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com", commits: false}),
             botReleaseNotesAsEmpty: false,
             referenceLinkStyle: "web",
+            mobileDrawer: true,
             debug: true,
         });
     });
@@ -81,6 +83,12 @@ describe("mergeSettings", () => {
         expect(mergeSettings({}).botReleaseNotesAsEmpty).toBe(true);
         expect(mergeSettings({botReleaseNotesAsEmpty: false}).botReleaseNotesAsEmpty).toBe(false);
         expect(mergeSettings({botReleaseNotesAsEmpty: 0}).botReleaseNotesAsEmpty).toBe(true);
+    });
+
+    it("新功能默认关闭，只认真正的 true", () => {
+        expect(mergeSettings({}).mobileDrawer).toBe(false);
+        expect(mergeSettings({mobileDrawer: true}).mobileDrawer).toBe(true);
+        expect(mergeSettings({mobileDrawer: "yes"}).mobileDrawer).toBe(false);
     });
 
     it("链接化引用的样式只认三个取值，旧的开关迁移过来", () => {

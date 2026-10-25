@@ -210,6 +210,21 @@
   }
 }
 
+// 移动端底部抽屉：外观全借思源原生的 `.mobile-bottom-sheet-dialog` / `.mobile-bottom-sheet`，
+// 这里只覆盖原生抽屉 60vh 的上限（高度由 drawer.ts 按视口比例写成行内值）。
+// 原生规则的选择器是两个类，这里把类名重复一次压过它，免得依赖两张样式表的先后顺序。
+.mobile-bottom-sheet-dialog.mobile-bottom-sheet-dialog .bazaar-release-notes--drawer {
+  height: 70vh;
+  max-height: none;
+  padding-top: 0;
+}
+
+// 抓手：原生类负责画那道横杠，这里只说明它可以拖
+.bazaar-release-notes__handle {
+  cursor: grab;
+  touch-action: none;
+}
+
 // 引用链接化的两种观感：移动端只加粗加下划线、文字颜色不变（GitHub 移动端就是这么画 #123 的），
 // 网页版是思源主色的下划线链接。只作用于插件自己新建的链接，内核渲染出来的 Markdown 链接不动。
 .bazaar-reference-link {

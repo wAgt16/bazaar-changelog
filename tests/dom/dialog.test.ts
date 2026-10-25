@@ -93,6 +93,16 @@ const click = (element: Element, init: MouseEventInit = {}) => {
     return event;
 };
 
+/** jsdom 没有触摸事件，自己造一个只带插件实际读到的字段的事件。 */
+const fireTouch = (element: Element, type: string, y: number) => {
+    const event = new Event(type, {bubbles: true, cancelable: true});
+    Object.defineProperties(event, {
+        touches: {value: [{clientY: y}]},
+        changedTouches: {value: [{clientY: y}]},
+    });
+    element.dispatchEvent(event);
+};
+
 beforeEach(async () => {
     vi.resetModules();
     mocks.fetchReleases.mockReset().mockResolvedValue({status: "ok", releases: releases()});
@@ -727,5 +737,64 @@ describe("正文里的链接", () => {
         await expectBody("修了 #12");
         expect(bodyEl().querySelector("a")?.className)
             .toBe("bazaar-reference-link bazaar-reference-link--web");
+    });
+});
+
+describe("移动端底部抽屉", () => {
+    const dialogOptions = () => (stubState.dialogs[0] as unknown as {options: Record<string, unknown>}).options;
+    const sheetOf = () => requiredDialog().querySelector(".b3-dialog__container") as HTMLElement;
+
+    it("设置没打开时，移动端仍是普通弹窗", async () => {
+        stubState.frontend = "mobile";
+        open();
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(false);
+        expect(dialogOptions().width).toBe("92vw");
+        expect(control("close")).not.toBeNull();
+    });
+
+    it("打开后贴合屏幕两侧、没有关闭按钮", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(true);
+        expect(dialogOptions().width).toBe("100%");
+        // 右上角的关闭图标由 Dialog 自己按这个选项省掉
+        expect(dialogOptions().hideCloseIcon).toBe(true);
+        expect(sheetOf().classList.contains("mobile-bottom-sheet")).toBe(true);
+        expect(sheetOf().querySelector(".bazaar-release-notes__handle")).not.toBeNull();
+        expect(control("close")).toBeNull();
+        expect(requiredDialog().querySelector(".b3-dialog__action")).toBeNull();
+    });
+
+    it("确认更新的弹窗里只留「更新」，没有「取消」", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true}), onConfirm: () => undefined});
+        await expectBody("修了 #12");
+
+        expect(control("confirm").textContent).toBe("更新");
+        expect(control("close")).toBeNull();
+    });
+
+    it("往下拉抓手就收回抽屉", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+        const handle = sheetOf().querySelector(".bazaar-release-notes__handle") as HTMLElement;
+
+        fireTouch(handle, "touchstart", 100);
+        fireTouch(handle, "touchmove", 700);
+        fireTouch(handle, "touchend", 700);
+        expect(dialogEl()).toBeNull();
+    });
+
+    it("桌面端不受这个设置影响", async () => {
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(false);
+        expect(dialogOptions().width).toBe("600px");
     });
 });

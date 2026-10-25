@@ -22,6 +22,7 @@ export default class ReleaseNotePlugin extends Plugin {
     private sourceElement: HTMLSelectElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
     private referencesElement: HTMLSelectElement | undefined;
+    private drawerElement: HTMLInputElement | undefined;
     private tokenElement: HTMLInputElement | undefined;
     private debugElement: HTMLInputElement | undefined;
     /** 解出来的令牌明文只放内存，落盘的是 githubToken 里的密文。 */
@@ -90,6 +91,18 @@ export default class ReleaseNotePlugin extends Plugin {
                 element.value = this.token;
                 this.suppressOpenKeyboard(element);
                 this.tokenElement = element;
+                return element;
+            },
+        });
+        this.setting.addItem({
+            title: t(this.texts(), "mobileDrawer"),
+            description: t(this.texts(), "mobileDrawerTip"),
+            createActionElement: () => {
+                const element = document.createElement("input");
+                element.type = "checkbox";
+                element.className = "b3-switch";
+                element.checked = this.settings.mobileDrawer;
+                this.drawerElement = element;
                 return element;
             },
         });
@@ -200,6 +213,7 @@ export default class ReleaseNotePlugin extends Plugin {
             githubAcceleration: this.settings.githubAcceleration,
             botReleaseNotesAsEmpty: this.botReleaseNotesElement?.checked,
             referenceLinkStyle: this.referencesElement?.value,
+            mobileDrawer: this.drawerElement?.checked,
             debug: this.debugElement?.checked,
         });
         if (!(await this.persistSettings(next))) {
@@ -327,6 +341,9 @@ export default class ReleaseNotePlugin extends Plugin {
         }
         if (this.referencesElement) {
             this.referencesElement.value = this.settings.referenceLinkStyle;
+        }
+        if (this.drawerElement) {
+            this.drawerElement.checked = this.settings.mobileDrawer;
         }
         if (this.tokenElement) {
             this.tokenElement.value = this.token;
