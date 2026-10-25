@@ -89,8 +89,10 @@
   哈希与提交信息之间的间距改由 `--commit-hash-gap` 控制，行内不再用统一的 `gap`。
 - **头像贴在提交者名字左边**：头像、名字与日期是行尾的一组，头像紧贴名字前面，不再占行首那一列
   —— 行首留给哈希，扫读时一列哈希、一列信息。窄屏放不下这一组时，它与展开的提交信息末尾那份
-  （`.bazaar-release-notes__commit-detail-meta`）互换显示；两处都由同一个 `avatarImage()` 造，头像
-  因此跟着名字走。图片**直接显示**，拿不到时由 `error` 摘掉（`alt=""`、`loading="lazy"`、
+  （`.bazaar-release-notes__commit-detail-meta`）互换显示；两处都用 `authorLine()` 造的同一个
+  `__author` 内联盒。盒子是必须的：头像与名字各自做外层（`.b3-list-item__meta` / 展开区那一行）
+  的 flex 子项时，外层一宽就把两者朝两头拉开 —— 手机上见过一次，头像孤零零卡在提交信息与
+  作者之间。图片**直接显示**，拿不到时由 `error` 摘掉（`alt=""`、`loading="lazy"`、
   `referrerpolicy="no-referrer"`，不把思源的地址带给头像 CDN）。别改成「先 `fn__none`、`load`
   之后再显示」：`display: none` 的懒加载图片不算接近视口，浏览器可能永远不去取它，于是永远等不到
   那次 `load` —— 这一版就是这么踩过一次，头像一个都不显示。头像只认关联到账号的 `author`，没有时

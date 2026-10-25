@@ -137,13 +137,18 @@
       white-space: nowrap;
     }
 
-    // 右侧的「头像 + 名字 · 日期」是一组，头像紧贴名字左边，两者居中对齐
+    // 右侧的作者行整体靠右；头像与名字之间的关系交给作者行自己（见 __author）
     .b3-list-item__meta {
-      align-items: center;
-      display: inline-flex;
-      gap: 6px;
       margin-left: 8px;
     }
+  }
+
+  // 「头像 + 名字 · 日期」：头像紧贴名字左边。间距写在这里而不是外层 flex 的 gap 上 ——
+  // 外层一宽（窄屏行内、或提交信息很短的行）就会把两者朝两头拉开
+  &__author {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
   }
 
   // 圆形提交者头像：出现在名字左边（窄屏时跟着作者与日期挪进展开的提交信息）

@@ -463,12 +463,14 @@ describe("提交记录来源", () => {
         expect(row.querySelector(".b3-list-item")?.firstElementChild?.className)
             .toBe("bazaar-release-notes__hash");
         const meta = row.querySelector(".b3-list-item__meta") as HTMLElement;
+        const author = meta.querySelector(".bazaar-release-notes__author") as HTMLElement;
         const avatar = meta.querySelector("img.bazaar-release-notes__avatar") as HTMLImageElement;
         expect(avatar).not.toBeNull();
         expect(avatar.src).toBe("https://avatars.githubusercontent.com/u/2?v=4");
         expect(avatar.alt).toBe("");
-        // 头像在名字前面
-        expect(meta.firstElementChild).toBe(avatar);
+        // 头像与名字在同一个内联盒里、头像在前：间距由这个盒子的 gap 定，不会被外层拉开
+        expect(author.firstElementChild).toBe(avatar);
+        expect(author.textContent).toBe("Bob · 2024-02-02");
         expect(meta.textContent).toBe("Bob · 2024-02-02");
         // 一开始就是显示着的：先藏起来的话懒加载可能永远不取图
         expect(avatar.classList.contains("fn__none")).toBe(false);

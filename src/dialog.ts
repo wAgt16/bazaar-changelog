@@ -656,6 +656,21 @@ ${actionRow}`,
     };
 
     /**
+     * 「头像 + 名字 · 日期」：头像与名字同在一个内联盒里，两者之间的间距只由这个盒子的 gap 决定
+     * —— 挂在外面那层 flex 上时，容器一宽（窄屏的行内、或内容很短的行）头像和名字就被拉开了。
+     */
+    const authorLine = (commit: ICommit, metaText: string): HTMLElement => {
+        const author = document.createElement("span");
+        author.className = `${CLASS}__author`;
+        const avatar = avatarImage(commit);
+        if (avatar) {
+            author.append(avatar);
+        }
+        author.append(document.createTextNode(metaText));
+        return author;
+    };
+
+    /**
      * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，
      * 右侧是提交者头像、名字与日期 —— 头像紧贴在名字左边。
      * 窄屏上没有靠右的位置，这一组改到展开的提交信息末尾（同一份内容，由 CSS 决定显示在哪）。
@@ -695,25 +710,19 @@ ${actionRow}`,
         const metaText = [commit.author, date].filter((value) => value).join(" · ");
         const meta = document.createElement("span");
         meta.className = "b3-list-item__meta";
-        const metaAvatar = avatarImage(commit);
-        if (metaAvatar) {
-            meta.append(metaAvatar);
+        if (metaText || commit.avatar) {
+            meta.append(authorLine(commit, metaText));
         }
-        meta.append(document.createTextNode(metaText));
         row.append(meta);
         const detail = document.createElement("div");
         detail.className = `${CLASS}__commit-detail fn__none`;
         detail.textContent = emojiToUnicode(commit.message.trim() || t(i18n, "commitNoMessage"));
         linkify(detail);
-        if (metaText || metaAvatar) {
+        if (metaText || commit.avatar) {
             // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
             const note = document.createElement("div");
             note.className = `${CLASS}__commit-detail-meta`;
-            const detailAvatar = avatarImage(commit);
-            if (detailAvatar) {
-                note.append(detailAvatar);
-            }
-            note.append(document.createTextNode(metaText));
+            note.append(authorLine(commit, metaText));
             detail.append(note);
         }
         row.addEventListener("click", (event) => {
