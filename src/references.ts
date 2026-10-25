@@ -1,4 +1,5 @@
 import {debug} from "./logger";
+import type {TReferenceLinkStyle} from "./settings";
 
 /**
  * 正文里值得变成链接的几样东西，按优先级排列：
@@ -19,13 +20,21 @@ const TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/;
 /** 已经在这个元素里的链接、行内代码与代码块不再处理。 */
 const SKIP = "a, code, pre, script, style";
 
+/** 新建链接的类名；`--mobile` / `--web` 是两种观感，样式在 index.scss 里。 */
+const LINK_CLASS = "bazaar-reference-link";
+
 const isBoundary = (text: string, index: number): boolean => index === 0 || !WORD_BEFORE.test(text[index - 1]);
 
 /**
  * 把一段文字里的引用与链接换成可点的锚点，返回新建的链接数。
  * 直接改传进来的节点：正文是内核渲染的 HTML，这里只补链接，不重新解析 Markdown。
+ * `style` 决定这些链接长什么样：GitHub 移动端是加粗加下划线且不改文字颜色，网页版是主色下划线。
  */
-export const linkifyGitHub = (container: HTMLElement, repo: string): number => {
+export const linkifyGitHub = (
+    container: HTMLElement,
+    repo: string,
+    style: Exclude<TReferenceLinkStyle, "off">,
+): number => {
     const texts: Text[] = [];
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) {
@@ -73,6 +82,7 @@ export const linkifyGitHub = (container: HTMLElement, repo: string): number => {
                 continue;
             }
             const anchor = document.createElement("a");
+            anchor.className = `${LINK_CLASS} ${LINK_CLASS}--${style}`;
             anchor.target = "_blank";
             anchor.rel = "noopener noreferrer";
             anchor.href = href;

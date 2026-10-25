@@ -205,6 +205,21 @@
   }
 }
 
+// 引用链接化的两种观感：移动端只加粗加下划线、文字颜色不变（GitHub 移动端就是这么画 #123 的），
+// 网页版是思源主色的下划线链接。只作用于插件自己新建的链接，内核渲染出来的 Markdown 链接不动。
+.bazaar-reference-link {
+  &--mobile {
+    color: inherit;
+    font-weight: bold;
+    text-decoration: underline;
+  }
+
+  &--web {
+    color: var(--b3-theme-primary);
+    text-decoration: underline;
+  }
+}
+
 // 「GitHub 加速」的独立窗口：一行一项，左边名字右边控件；分项开关只有名字，不带说明。
 .bazaar-acceleration {
   &__row {

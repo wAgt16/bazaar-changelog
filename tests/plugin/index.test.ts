@@ -87,7 +87,7 @@ describe("onload", () => {
         ]);
         expect(byTitle(plugin, "优先加载").value).toBe("releaseNotes");
         expect(byTitle(plugin, "识别空发行说明").checked).toBe(true);
-        expect(byTitle(plugin, "链接化引用").checked).toBe(true);
+        expect(byTitle(plugin, "链接化引用").value).toBe("mobile");
         // 加速改成独立窗口：设置页里只有入口按钮
         expect(byTitle(plugin, "GitHub 加速").textContent).toBe("配置");
         expect(byTitle(plugin, "调试模式").checked).toBe(false);
@@ -179,7 +179,7 @@ describe("保存设置", () => {
 
         byTitle(plugin, "优先加载").value = "changelog";
         byTitle(plugin, "识别空发行说明").checked = false;
-        byTitle(plugin, "链接化引用").checked = false;
+        byTitle(plugin, "链接化引用").value = "off";
         byTitle(plugin, "调试模式").checked = true;
         await confirm(plugin);
 
@@ -187,10 +187,11 @@ describe("保存设置", () => {
             preferredSource: "changelog",
             githubAcceleration: {...DEFAULT_ACCELERATION},
             botReleaseNotesAsEmpty: false,
-            githubReferences: false,
+            referenceLinkStyle: "off",
             debug: true,
         });
         expect(byTitle(plugin, "优先加载").value).toBe("changelog");
+        expect(byTitle(plugin, "链接化引用").value).toBe("off");
     });
 
     it("写盘失败时提示并且不按新值行事", async () => {

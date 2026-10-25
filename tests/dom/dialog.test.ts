@@ -694,8 +694,22 @@ describe("正文里的链接", () => {
 
     it("关掉链接化引用后正文里的 #12 保持纯文本", async () => {
         withBody("修了 #12");
-        open({settings: settings({githubReferences: false})});
+        open({settings: settings({referenceLinkStyle: "off"})});
         await expectBody("修了 #12");
         expect(bodyEl().querySelector("a")).toBeNull();
+    });
+
+    it("正文里的引用按设置的样式加类名：默认移动端，选网页版换一个类", async () => {
+        withBody("修了 #12");
+        open();
+        await expectBody("修了 #12");
+        expect(bodyEl().querySelector("a")?.className)
+            .toBe("bazaar-reference-link bazaar-reference-link--mobile");
+
+        // 再开一次（旧弹窗会被销毁），换成网页版
+        open({settings: settings({referenceLinkStyle: "web"})});
+        await expectBody("修了 #12");
+        expect(bodyEl().querySelector("a")?.className)
+            .toBe("bazaar-reference-link bazaar-reference-link--web");
     });
 });

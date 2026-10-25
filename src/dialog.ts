@@ -370,10 +370,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const botRangeOf = (markdown: string) =>
         options.settings.botReleaseNotesAsEmpty ? parseFullChangelogOnly(markdown) : undefined;
 
-    /** 正文里的 #123、owner/repo#123 与 @user 换成 GitHub 链接，跟着设置开关走。 */
+    /**
+     * 正文里的 #123、owner/repo#123 与 @user 换成 GitHub 链接，观感跟着设置走：
+     * 「禁用」时整段不做，正文保持原样；两种样式由 index.scss 里的类名决定。
+     */
     const linkify = (container: HTMLElement) => {
-        if (options.settings.githubReferences) {
-            linkifyGitHub(container, repo);
+        const style = options.settings.referenceLinkStyle;
+        if (style !== "off") {
+            linkifyGitHub(container, repo, style);
         }
     };
 

@@ -23,13 +23,13 @@ describe("mergeSettings", () => {
             preferredSource: "changelog",
             githubAcceleration: {enabled: true, url: " https://gh-proxy.com ", commits: false},
             botReleaseNotesAsEmpty: false,
-            githubReferences: false,
+            referenceLinkStyle: "web",
             debug: true,
         })).toEqual({
             preferredSource: "changelog",
             githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com", commits: false}),
             botReleaseNotesAsEmpty: false,
-            githubReferences: false,
+            referenceLinkStyle: "web",
             debug: true,
         });
     });
@@ -81,8 +81,17 @@ describe("mergeSettings", () => {
         expect(mergeSettings({}).botReleaseNotesAsEmpty).toBe(true);
         expect(mergeSettings({botReleaseNotesAsEmpty: false}).botReleaseNotesAsEmpty).toBe(false);
         expect(mergeSettings({botReleaseNotesAsEmpty: 0}).botReleaseNotesAsEmpty).toBe(true);
-        expect(mergeSettings({githubReferences: false}).githubReferences).toBe(false);
-        expect(mergeSettings({githubReferences: "no"}).githubReferences).toBe(true);
+    });
+
+    it("链接化引用的样式只认三个取值，旧的开关迁移过来", () => {
+        expect(mergeSettings({}).referenceLinkStyle).toBe("mobile");
+        expect(mergeSettings({referenceLinkStyle: "off"}).referenceLinkStyle).toBe("off");
+        expect(mergeSettings({referenceLinkStyle: "web"}).referenceLinkStyle).toBe("web");
+        expect(mergeSettings({referenceLinkStyle: "bold"}).referenceLinkStyle).toBe("mobile");
+        // 旧版本只有开/关：关掉的转成「禁用」，开着的沿用新的默认样式
+        expect(mergeSettings({githubReferences: false}).referenceLinkStyle).toBe("off");
+        expect(mergeSettings({githubReferences: true}).referenceLinkStyle).toBe("mobile");
+        expect(mergeSettings({githubReferences: "no"}).referenceLinkStyle).toBe("mobile");
     });
 
     it("丢掉不认识的字段", () => {

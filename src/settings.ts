@@ -4,6 +4,14 @@ export type TChangelogSource = "releaseNotes" | "changelog" | "commits";
 /** 可以单独决定是否走加速地址的四类请求。 */
 export type TGithubRequest = TChangelogSource | "avatars";
 
+/**
+ * 引用链接化的样式：
+ * - `off`：不把 #123、@user 之类变成链接；
+ * - `mobile`：GitHub 移动端的画法 —— 文字颜色不变，加粗加下划线；
+ * - `web`：GitHub 网页版的画法 —— 蓝色下划线链接。
+ */
+export type TReferenceLinkStyle = "off" | "mobile" | "web";
+
 /** GitHub 加速：一个总开关、一个前缀地址，加上每一类请求自己的开关。 */
 export interface IGithubAcceleration {
     /** 总开关。关闭时四类请求一律直连，分项开关留着不动。 */
@@ -22,8 +30,8 @@ export interface ISettings {
     githubAcceleration: IGithubAcceleration;
     /** 把只有 Full Changelog 链接的发行说明当成「该版本没有发行说明」。 */
     botReleaseNotesAsEmpty: boolean;
-    /** 把 #123、owner/repo#123 与 @user 渲染成指向 GitHub 的链接。 */
-    githubReferences: boolean;
+    /** 把 #123、owner/repo#123 与 @user 渲染成指向 GitHub 的链接时的样式。 */
+    referenceLinkStyle: TReferenceLinkStyle;
     /** 是否在控制台输出本插件的完整过程日志。 */
     debug: boolean;
 }
@@ -42,7 +50,8 @@ export const DEFAULT_SETTINGS: ISettings = {
     preferredSource: "releaseNotes",
     githubAcceleration: {...DEFAULT_ACCELERATION},
     botReleaseNotesAsEmpty: true,
-    githubReferences: true,
+    // 默认跟 GitHub 移动端一致：用户多数是在手机上翻更新日志，引用就该像手机上那样
+    referenceLinkStyle: "mobile",
     debug: false,
 };
 
@@ -75,12 +84,15 @@ const mergeAcceleration = (saved: unknown, legacyURL: unknown): IGithubAccelerat
 export const mergeSettings = (saved: unknown): ISettings => {
     const value = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
     const source = value.preferredSource;
+    const linkStyle = value.referenceLinkStyle;
     return {
         preferredSource: source === "changelog" || source === "commits" ? source : "releaseNotes",
         githubAcceleration: mergeAcceleration(value.githubAcceleration, value.githubAccelerationURL),
         // 这一项默认是开的，只有明确存了 false 才关
         botReleaseNotesAsEmpty: value.botReleaseNotesAsEmpty !== false,
-        githubReferences: value.githubReferences !== false,
+        // 旧版本是一个开/关：关掉的转成「禁用」，开着的沿用新的默认样式
+        referenceLinkStyle: linkStyle === "off" || linkStyle === "mobile" || linkStyle === "web" ?
+            linkStyle : value.githubReferences === false ? "off" : DEFAULT_SETTINGS.referenceLinkStyle,
         debug: value.debug === true,
     };
 };

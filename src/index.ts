@@ -21,7 +21,7 @@ export default class ReleaseNotePlugin extends Plugin {
     private readonly disposers: Array<() => void> = [];
     private sourceElement: HTMLSelectElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
-    private referencesElement: HTMLInputElement | undefined;
+    private referencesElement: HTMLSelectElement | undefined;
     private tokenElement: HTMLInputElement | undefined;
     private debugElement: HTMLInputElement | undefined;
     /** 解出来的令牌明文只放内存，落盘的是 githubToken 里的密文。 */
@@ -63,16 +63,9 @@ export default class ReleaseNotePlugin extends Plugin {
             },
         });
         this.setting.addItem({
-            title: t(this.texts(), "githubReferences"),
-            description: t(this.texts(), "githubReferencesTip"),
-            createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "checkbox";
-                element.className = "b3-switch";
-                element.checked = this.settings.githubReferences;
-                this.referencesElement = element;
-                return element;
-            },
+            title: t(this.texts(), "referenceLinkStyle"),
+            description: t(this.texts(), "referenceLinkStyleTip"),
+            createActionElement: () => this.createReferenceStyleElement(),
         });
         this.setting.addItem({
             title: t(this.texts(), "githubAcceleration"),
@@ -165,6 +158,25 @@ export default class ReleaseNotePlugin extends Plugin {
         return element;
     }
 
+    /** 引用链接化的样式：禁用、GitHub 移动端样式（加粗加下划线）或 GitHub 网页样式（蓝色下划线）。 */
+    private createReferenceStyleElement(): HTMLSelectElement {
+        const element = document.createElement("select");
+        element.className = "b3-select fn__block";
+        for (const [value, key] of [
+            ["off", "referenceLinkOff"],
+            ["mobile", "referenceLinkMobile"],
+            ["web", "referenceLinkWeb"],
+        ] as const) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = t(this.texts(), key);
+            element.append(option);
+        }
+        element.value = this.settings.referenceLinkStyle;
+        this.referencesElement = element;
+        return element;
+    }
+
     /**
      * 思源构建插件设置弹窗时，会把每个 input/textarea 交给 dialog.bindInput()，
      * 而 bindInput() 第一件事就是 focus()——这时元素还没插进 DOM。
@@ -187,7 +199,7 @@ export default class ReleaseNotePlugin extends Plugin {
             preferredSource: this.sourceElement?.value,
             githubAcceleration: this.settings.githubAcceleration,
             botReleaseNotesAsEmpty: this.botReleaseNotesElement?.checked,
-            githubReferences: this.referencesElement?.checked,
+            referenceLinkStyle: this.referencesElement?.value,
             debug: this.debugElement?.checked,
         });
         if (!(await this.persistSettings(next))) {
@@ -314,7 +326,7 @@ export default class ReleaseNotePlugin extends Plugin {
             this.botReleaseNotesElement.checked = this.settings.botReleaseNotesAsEmpty;
         }
         if (this.referencesElement) {
-            this.referencesElement.checked = this.settings.githubReferences;
+            this.referencesElement.value = this.settings.referenceLinkStyle;
         }
         if (this.tokenElement) {
             this.tokenElement.value = this.token;
