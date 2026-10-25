@@ -1,4 +1,4 @@
-import {resolveGithubURL} from "./github";
+import {resolveGithubURL, usesAcceleration} from "./github";
 import type {TFailureReason} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
@@ -11,6 +11,8 @@ export interface ICommit {
     author: string;
     /** 提交时间，GitHub 给的 ISO 8601。 */
     date: string;
+    /** 提交者头像地址；GitHub 没关联到账号时为空串，弹窗据此不留位置。 */
+    avatar: string;
 }
 
 export type TCommitsResult =
@@ -35,26 +37,38 @@ export const commitURL = (repo: string, sha: string): string => `https://github.
 /** 短哈希只用于显示，跳转仍用完整 sha。 */
 export const shortSha = (sha: string): string => sha.slice(0, 7);
 
+interface IGithubUser {
+    avatar_url?: unknown;
+}
+
 interface IGithubCommit {
     sha?: unknown;
     html_url?: unknown;
+    /** 关联到 GitHub 账号的提交者；没关联时是 null，只有 commit.author 里的名字。 */
+    author?: IGithubUser | null;
+    committer?: IGithubUser | null;
     commit?: {
         message?: unknown;
         author?: {name?: unknown, date?: unknown} | null;
     } | null;
 }
 
-const toCommit = (item: IGithubCommit): ICommit | undefined => {
+const toCommit = (item: IGithubCommit, settings: ISettings): ICommit | undefined => {
     if (!item || typeof item !== "object" || typeof item.sha !== "string" || !item.sha) {
         return undefined;
     }
     const commit = item.commit && typeof item.commit === "object" ? item.commit : undefined;
     const author = commit?.author && typeof commit.author === "object" ? commit.author : undefined;
+    // 头像只认关联到账号的那一侧：author 没有时退回 committer（例如别人代推的提交）
+    const avatarURL = [item.author, item.committer]
+        .map((user) => (user && typeof user.avatar_url === "string" ? user.avatar_url : ""))
+        .find((url) => url !== "") || "";
     return {
         sha: item.sha,
         message: typeof commit?.message === "string" ? commit.message : "",
         author: typeof author?.name === "string" ? author.name : "",
         date: typeof author?.date === "string" ? author.date : "",
+        avatar: avatarURL ? resolveGithubURL(avatarURL, settings, "avatars") : "",
     };
 };
 
@@ -80,8 +94,11 @@ export const fetchCommits = async (
     settings: ISettings,
     timeoutMs: number,
 ): Promise<TCommitsResult> => {
-    const url = resolveGithubURL(buildURL(repo, range.base, range.head), settings);
-    const cached = cache.get(url);
+    const url = resolveGithubURL(buildURL(repo, range.base, range.head), settings, "commits");
+    // 缓存里存的是已经解析好的头像地址，所以「头像」那一项也得进键：只翻它时 URL 不变，
+    // 沿用旧键会让开关在 TTL 内看起来没生效
+    const cacheKey = `${url}|avatars:${usesAcceleration(settings, "avatars") ? "on" : "off"}`;
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.time < CACHE_TTL) {
         debug(`commits: cache hit for ${repo}`, {
             count: cached.commits.length,
@@ -92,7 +109,7 @@ export const fetchCommits = async (
     debug(`commits: GET ${url}`, {
         base: range.base || "(none)",
         head: range.head || "(none)",
-        acceleration: settings.githubAcceleration,
+        acceleration: usesAcceleration(settings, "commits"),
         authorized: willAuthorize(url),
         timeoutMs,
     });
@@ -133,7 +150,7 @@ export const fetchCommits = async (
         }
         const commits = list
             .filter((item): item is IGithubCommit => Boolean(item) && typeof item === "object")
-            .map(toCommit)
+            .map((item) => toCommit(item, settings))
             .filter((item): item is ICommit => Boolean(item));
         // compare 与列表接口的方向相反（旧的在前 / 新的在前），弹窗里统一按新的在前看；
         // 无脑反转会让「不限 → HEAD」那一屏从旧到新
@@ -152,7 +169,7 @@ export const fetchCommits = async (
         if (commits.length === 0) {
             return {status: "empty"};
         }
-        cache.set(url, {time: Date.now(), commits, total});
+        cache.set(cacheKey, {time: Date.now(), commits, total});
         return {status: "ok", commits, total};
     } catch (error) {
         debug(`commits: ${repo} ${timedOut ? "timed out" : "failed"}`, {

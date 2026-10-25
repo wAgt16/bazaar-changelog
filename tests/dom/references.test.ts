@@ -15,7 +15,7 @@ const hrefs = (element: HTMLElement): Array<string | null> =>
 describe("linkifyGitHub", () => {
     it("把 #123 变成指向本仓库 issue 的链接", () => {
         const element = container("<p>修了 #123 的问题</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(1);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(1);
         const anchor = element.querySelector("a") as HTMLAnchorElement;
         expect(anchor.getAttribute("href")).toBe("https://github.com/owner/repo/issues/123");
         expect(anchor.textContent).toBe("#123");
@@ -26,19 +26,19 @@ describe("linkifyGitHub", () => {
 
     it("把 owner/repo#12 变成跨仓库引用", () => {
         const element = container("<p>见 other/project#12</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(1);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(1);
         expect(hrefs(element)).toEqual(["https://github.com/other/project/issues/12"]);
     });
 
     it("把 @user 变成用户主页", () => {
         const element = container("<p>谢谢 @octocat 和 @dev-name</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(2);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(2);
         expect(hrefs(element)).toEqual(["https://github.com/octocat", "https://github.com/dev-name"]);
     });
 
     it("裸链接也变成链接，末尾标点留在句子外面", () => {
         const element = container("<p>详见 https://example.com/a?b=1 以及 https://example.com/b.</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(2);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(2);
         const anchors = Array.from(element.querySelectorAll("a"));
         expect(anchors[0].getAttribute("href")).toBe("https://example.com/a?b=1");
         expect(anchors[1].getAttribute("href")).toBe("https://example.com/b");
@@ -47,7 +47,7 @@ describe("linkifyGitHub", () => {
 
     it("一个文本节点里的多处引用全部处理", () => {
         const element = container("<p>#1 #2 @a</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(3);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(3);
         expect(hrefs(element)).toEqual([
             "https://github.com/owner/repo/issues/1",
             "https://github.com/owner/repo/issues/2",
@@ -62,7 +62,7 @@ describe("linkifyGitHub", () => {
             "<pre>#3</pre>",
             "<p>#4</p>",
         ].join(""));
-        expect(linkifyGitHub(element, REPO)).toBe(1);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(1);
         expect(hrefs(element)).toEqual(["https://example.com", "https://github.com/owner/repo/issues/4"]);
     });
 
@@ -74,14 +74,24 @@ describe("linkifyGitHub", () => {
 
     it("括号后面紧跟着的引用仍然处理", () => {
         const element = container("<p>(#123)</p>");
-        expect(linkifyGitHub(element, REPO)).toBe(1);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(1);
         expect(element.textContent).toBe("(#123)");
     });
 
     it("没有可链接的内容时返回 0 且不改 DOM", () => {
         const element = container("<p>什么都没有</p>");
         const before = element.innerHTML;
-        expect(linkifyGitHub(element, REPO)).toBe(0);
+        expect(linkifyGitHub(element, REPO, "mobile")).toBe(0);
         expect(element.innerHTML).toBe(before);
+    });
+
+    it("按设置给新建的链接加样式类", () => {
+        const mobile = container("<p>#1</p>");
+        linkifyGitHub(mobile, REPO, "mobile");
+        expect(mobile.querySelector("a")?.className).toBe("bazaar-reference-link bazaar-reference-link--mobile");
+
+        const web = container("<p>#1</p>");
+        linkifyGitHub(web, REPO, "web");
+        expect(web.querySelector("a")?.className).toBe("bazaar-reference-link bazaar-reference-link--web");
     });
 });

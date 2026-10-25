@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import zhCN from "../../src/i18n/zh-CN.json";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 import {stubState} from "../stubs/siyuan";
 
 /**
@@ -29,8 +28,6 @@ vi.mock("../../src/commits", async (importOriginal) => {
 
 const REPO_URL = "https://github.com/owner/repo";
 
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
-
 const releases = () => [
     {tag: "v1.2.3", publishedAt: "2024-03-01T00:00:00Z", markdown: "## 修复\n\n- 修了 #12"},
     {tag: "v1.2.2", publishedAt: "2024-02-01T00:00:00Z", markdown: "上一版说明"},
@@ -44,15 +41,16 @@ const commits = () => [
         message: "fix: second\n\n更多说明",
         author: "Bob",
         date: "2024-02-02T10:00:00Z",
+        avatar: "https://avatars.githubusercontent.com/u/2?v=4",
     },
     {
         sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         message: "first",
         author: "Alice",
         date: "2024-01-01T10:00:00Z",
+        avatar: "",
     },
 ];
-
 type OpenChangelog = typeof import("../../src/dialog").openChangelog;
 let openChangelog: OpenChangelog;
 
@@ -92,6 +90,16 @@ const click = (element: Element, init: MouseEventInit = {}) => {
     const event = new MouseEvent("click", {bubbles: true, cancelable: true, ...init});
     element.dispatchEvent(event);
     return event;
+};
+
+/** jsdom 没有触摸事件，自己造一个只带插件实际读到的字段的事件。 */
+const fireTouch = (element: Element, type: string, y: number) => {
+    const event = new Event(type, {bubbles: true, cancelable: true});
+    Object.defineProperties(event, {
+        touches: {value: [{clientY: y}]},
+        changedTouches: {value: [{clientY: y}]},
+    });
+    element.dispatchEvent(event);
 };
 
 beforeEach(async () => {
@@ -375,16 +383,34 @@ describe("提交记录来源", () => {
 
     it("开了加速时把原因并进那句话、任何状态码都算", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 404}});
-        open({settings: settings({preferredSource: "commits", githubAcceleration: true})});
+        open({
+            settings: settings({
+                preferredSource: "commits",
+                githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
+            }),
+        });
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
             .toBe("GitHub 加速服务可能不支持获取选定版本范围的提交（GitHub 返回 404）");
         expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
+    it("只开了别的分项时不给这句，提交记录本来就是直连的", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 404}});
+        open({
+            settings: settings({
+                preferredSource: "commits",
+                githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", commits: false}),
+            }),
+        });
+        await expectBody("无法获取提交记录");
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("GitHub 返回 404");
+    });
+
     it("没开加速时只给原因，不甩锅给加速", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 403}});
-        open({settings: settings({preferredSource: "commits", githubAcceleration: false})});
+        open({settings: settings({preferredSource: "commits"})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
             .toBe("请求被拒绝（403），可能是限流");
@@ -405,11 +431,87 @@ describe("提交记录来源", () => {
         const rows = requiredDialog().querySelectorAll(".bazaar-release-notes__commit");
         expect(rows).toHaveLength(2);
         const first = rows[0];
-        expect(first.querySelector(".bazaar-release-notes__hash")?.textContent).toBe("bbbbbbb");
-        expect(first.querySelector(".bazaar-release-notes__hash")?.getAttribute("href"))
+        expect(first.querySelector(".bazaar-release-notes__hash-link")?.textContent).toBe("bbbbbbb");
+        expect(first.querySelector(".bazaar-release-notes__hash-link")?.getAttribute("href"))
             .toBe("https://github.com/owner/repo/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         expect(first.querySelector(".b3-list-item__text")?.textContent).toBe("fix: second");
         expect(first.querySelector(".b3-list-item__meta")?.textContent).toBe("Bob · 2024-02-02");
+    });
+
+    it("链接只包住哈希本身，点哈希列右边的空白只展开不跳转", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        const detail = row.querySelector(".bazaar-release-notes__commit-detail") as HTMLElement;
+
+        // 哈希列自己占位，链接是它的子元素：列里哈希之外的空白不属于链接
+        const cell = row.querySelector(".bazaar-release-notes__hash") as HTMLElement;
+        expect(cell.tagName).toBe("SPAN");
+        expect(cell.querySelector("a.bazaar-release-notes__hash-link")).not.toBeNull();
+        expect(cell.getAttribute("href")).toBeNull();
+
+        click(cell);
+        expect(detail.classList.contains("fn__none")).toBe(false);
+    });
+
+    it("提交者头像：显示在提交者名字左边，取不到时摘掉", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        // 行的最左是哈希列，头像跟着作者名字走
+        expect(row.querySelector(".b3-list-item")?.firstElementChild?.className)
+            .toBe("bazaar-release-notes__hash");
+        const meta = row.querySelector(".b3-list-item__meta") as HTMLElement;
+        const author = meta.querySelector(".bazaar-release-notes__author") as HTMLElement;
+        const avatar = meta.querySelector("img.bazaar-release-notes__avatar") as HTMLImageElement;
+        expect(avatar).not.toBeNull();
+        expect(avatar.src).toBe("https://avatars.githubusercontent.com/u/2?v=4");
+        expect(avatar.alt).toBe("");
+        // 头像与名字在同一个内联盒里、头像在前：间距由这个盒子的 gap 定，不会被外层拉开
+        expect(author.firstElementChild).toBe(avatar);
+        expect(author.textContent).toBe("Bob · 2024-02-02");
+        expect(meta.textContent).toBe("Bob · 2024-02-02");
+        // 一开始就是显示着的：先藏起来的话懒加载可能永远不取图
+        expect(avatar.classList.contains("fn__none")).toBe(false);
+        avatar.dispatchEvent(new Event("error"));
+        expect(avatar.classList.contains("fn__none")).toBe(true);
+
+        // 窄屏时这一组挪进展开的提交信息，头像跟着一起过去
+        const note = row.querySelector(".bazaar-release-notes__commit-detail-meta") as HTMLElement;
+        expect(note.querySelector("img.bazaar-release-notes__avatar")).not.toBeNull();
+        expect(note.textContent).toBe("Bob · 2024-02-02");
+    });
+
+    it("没有头像的提交只在名字那一列显示名字与日期", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+
+        const second = requiredDialog().querySelectorAll(".bazaar-release-notes__commit")[1] as HTMLElement;
+        const meta = second.querySelector(".b3-list-item__meta") as HTMLElement;
+        expect(meta.querySelector("img")).toBeNull();
+        expect(meta.textContent).toBe("Alice · 2024-01-01");
+    });
+
+    it("提交信息里的 emoji 短代码渲染成表情", async () => {
+        mocks.fetchCommits.mockResolvedValue({
+            status: "ok",
+            total: 1,
+            commits: [{
+                sha: "d".repeat(40),
+                message: "chore: :tada: 发布 :rocket:\n\n正文里的 :fire: 也换",
+                author: "Dora",
+                date: "2024-03-03T10:00:00Z",
+                avatar: "",
+            }],
+        });
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("chore: 🎉 发布 🚀");
+
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        expect(row.querySelector(".b3-list-item__text")?.textContent).toBe("chore: 🎉 发布 🚀");
+        expect(row.querySelector(".bazaar-release-notes__commit-detail")?.textContent)
+            .toContain("正文里的 🔥 也换");
     });
 
     it("点一行展开完整提交信息，点里面的链接不展开", async () => {
@@ -427,7 +529,7 @@ describe("提交记录来源", () => {
         // 短哈希是链接，点它不该切换展开状态
         const prevent = (event: Event) => event.preventDefault();
         document.addEventListener("click", prevent);
-        click(row.querySelector(".bazaar-release-notes__hash") as HTMLElement);
+        click(row.querySelector(".bazaar-release-notes__hash-link") as HTMLElement);
         document.removeEventListener("click", prevent);
         expect(detail.classList.contains("fn__none")).toBe(false);
     });
@@ -640,8 +742,81 @@ describe("正文里的链接", () => {
 
     it("关掉链接化引用后正文里的 #12 保持纯文本", async () => {
         withBody("修了 #12");
-        open({settings: settings({githubReferences: false})});
+        open({settings: settings({referenceLinkStyle: "off"})});
         await expectBody("修了 #12");
         expect(bodyEl().querySelector("a")).toBeNull();
+    });
+
+    it("正文里的引用按设置的样式加类名：默认移动端，选网页版换一个类", async () => {
+        withBody("修了 #12");
+        open();
+        await expectBody("修了 #12");
+        expect(bodyEl().querySelector("a")?.className)
+            .toBe("bazaar-reference-link bazaar-reference-link--mobile");
+
+        // 再开一次（旧弹窗会被销毁），换成网页版
+        open({settings: settings({referenceLinkStyle: "web"})});
+        await expectBody("修了 #12");
+        expect(bodyEl().querySelector("a")?.className)
+            .toBe("bazaar-reference-link bazaar-reference-link--web");
+    });
+});
+
+describe("移动端底部抽屉", () => {
+    const dialogOptions = () => (stubState.dialogs[0] as unknown as {options: Record<string, unknown>}).options;
+    const sheetOf = () => requiredDialog().querySelector(".b3-dialog__container") as HTMLElement;
+
+    it("设置没打开时，移动端仍是普通弹窗", async () => {
+        stubState.frontend = "mobile";
+        open();
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(false);
+        expect(dialogOptions().width).toBe("92vw");
+        expect(control("close")).not.toBeNull();
+    });
+
+    it("打开后贴合屏幕两侧、没有关闭按钮", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(true);
+        expect(dialogOptions().width).toBe("100%");
+        // 右上角的关闭图标由 Dialog 自己按这个选项省掉
+        expect(dialogOptions().hideCloseIcon).toBe(true);
+        expect(sheetOf().classList.contains("mobile-bottom-sheet")).toBe(true);
+        expect(sheetOf().querySelector(".bazaar-release-notes__handle")).not.toBeNull();
+        expect(control("close")).toBeNull();
+        expect(requiredDialog().querySelector(".b3-dialog__action")).toBeNull();
+    });
+
+    it("确认更新的弹窗里只留「更新」，没有「取消」", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true}), onConfirm: () => undefined});
+        await expectBody("修了 #12");
+
+        expect(control("confirm").textContent).toBe("更新");
+        expect(control("close")).toBeNull();
+    });
+
+    it("往下拉抓手就收回抽屉", async () => {
+        stubState.frontend = "mobile";
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+        const handle = sheetOf().querySelector(".bazaar-release-notes__handle") as HTMLElement;
+
+        fireTouch(handle, "touchstart", 100);
+        fireTouch(handle, "touchmove", 700);
+        fireTouch(handle, "touchend", 700);
+        expect(dialogEl()).toBeNull();
+    });
+
+    it("桌面端不受这个设置影响", async () => {
+        open({settings: settings({mobileDrawer: true})});
+        await expectBody("修了 #12");
+
+        expect(requiredDialog().classList.contains("mobile-bottom-sheet-dialog")).toBe(false);
+        expect(dialogOptions().width).toBe("600px");
     });
 });

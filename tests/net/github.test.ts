@@ -1,15 +1,12 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {abortable, mockResponse, stubFetch} from "../helpers/network";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 
 type GithubModule = typeof import("../../src/github");
 type TokenModule = typeof import("../../src/token");
 
 let github: GithubModule;
 let token: TokenModule;
-
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
 
 beforeEach(async () => {
     vi.resetModules();
@@ -53,24 +50,42 @@ describe("加速地址", () => {
     });
 
     it("没开加速时地址原样返回", () => {
-        expect(github.resolveGithubURL("https://api.github.com/x", settings()))
+        expect(github.resolveGithubURL("https://api.github.com/x", settings(), "releaseNotes"))
             .toBe("https://api.github.com/x");
     });
 
     it("开了加速但地址不合法时也原样返回", () => {
-        expect(github.resolveGithubURL("https://api.github.com/x", settings({githubAcceleration: true})))
-            .toBe("https://api.github.com/x");
         expect(github.resolveGithubURL("https://api.github.com/x", settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "gh-proxy.com",
-        }))).toBe("https://api.github.com/x");
+            githubAcceleration: acceleration({enabled: true}),
+        }), "releaseNotes")).toBe("https://api.github.com/x");
+        expect(github.resolveGithubURL("https://api.github.com/x", settings({
+            githubAcceleration: acceleration({enabled: true, url: "gh-proxy.com"}),
+        }), "releaseNotes")).toBe("https://api.github.com/x");
     });
 
     it("开了加速且地址合法时拼在前缀后面", () => {
         expect(github.resolveGithubURL("https://api.github.com/x", settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com",
-        }))).toBe("https://gh-proxy.com/https://api.github.com/x");
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com"}),
+        }), "releaseNotes")).toBe("https://gh-proxy.com/https://api.github.com/x");
+    });
+
+    it("分项关掉的那一类照旧直连", () => {
+        const accelerated = settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", commits: false}),
+        });
+        expect(github.resolveGithubURL("https://api.github.com/x", accelerated, "commits"))
+            .toBe("https://api.github.com/x");
+        expect(github.resolveGithubURL("https://api.github.com/x", accelerated, "changelog"))
+            .toBe("https://gh-proxy.com/https://api.github.com/x");
+        expect(github.usesAcceleration(accelerated, "commits")).toBe(false);
+        expect(github.usesAcceleration(accelerated, "changelog")).toBe(true);
+    });
+
+    it("总开关关着时分项开着也不走加速", () => {
+        const off = settings({githubAcceleration: acceleration({url: "https://gh-proxy.com/"})});
+        expect(github.usesAcceleration(off, "avatars")).toBe(false);
+        expect(github.resolveGithubURL("https://api.github.com/x", off, "avatars"))
+            .toBe("https://api.github.com/x");
     });
 });
 
@@ -210,8 +225,7 @@ describe("fetchReleases", () => {
         token.setGithubToken("ghp_test");
         const {calls} = stubFetch(() => mockResponse([]));
         await github.fetchReleases("owner/repo", settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
         }), 3000);
         expect(calls[0].url)
             .toBe("https://gh-proxy.com/https://api.github.com/repos/owner/repo/releases?per_page=100");
@@ -231,8 +245,7 @@ describe("fetchReleases", () => {
         await github.fetchReleases("owner/repo", settings(), 3000);
         await github.fetchReleases("other/repo", settings(), 3000);
         await github.fetchReleases("owner/repo", settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
         }), 3000);
         expect(fetchMock).toHaveBeenCalledTimes(3);
     });

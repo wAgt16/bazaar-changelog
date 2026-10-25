@@ -102,9 +102,10 @@
   }
 
   &__commit {
-    // 哈希列的宽度：7 位短哈希之外再留一个图标的位置。图标类插件会给链接加图标，
-    // 只按 7ch 留宽度时哈希会被挤到下一行。
-    --commit-hash-column: calc(7ch + 24px);
+    // 哈希列只按 7 位短哈希的宽度留位置；展开的提交信息要从提交信息那一列开始，
+    // 所以间距也记成变量
+    --commit-hash-column: 7ch;
+    --commit-hash-gap: 4px;
 
     // 相邻两行之间加一条淡分隔线，扫读时不容易串行
     & + & {
@@ -115,7 +116,6 @@
       align-items: center;
       cursor: pointer;
       display: flex;
-      gap: 8px;
       height: auto;
       min-height: 28px;
       padding: 4px 8px;
@@ -137,22 +137,45 @@
       white-space: nowrap;
     }
 
+    // 右侧的作者行整体靠右；头像与名字之间的关系交给作者行自己（见 __author）
     .b3-list-item__meta {
-      margin-left: 0;
+      margin-left: 8px;
     }
   }
 
-  // 短哈希固定占一列，各行的哈希因此左对齐；列宽写成 min-width，
-  // 图标比预留位置还宽时让列自己长，而不是把哈希挤断行
+  // 「头像 + 名字 · 日期」：头像紧贴名字左边。间距写在这里而不是外层 flex 的 gap 上 ——
+  // 外层一宽（窄屏行内、或提交信息很短的行）就会把两者朝两头拉开
+  &__author {
+    align-items: center;
+    display: inline-flex;
+    gap: 6px;
+  }
+
+  // 圆形提交者头像：出现在名字左边（窄屏时跟着作者与日期挪进展开的提交信息）
+  &__avatar {
+    border-radius: 50%;
+    flex: 0 0 auto;
+    height: 16px;
+    object-fit: cover;
+    width: 16px;
+  }
+
+  // 短哈希列：列只占 7 位短哈希的宽度，链接只包住那几个字 ——
+  // 中间那截空白不属于链接，点它只展开提交信息，不会跳去 GitHub。
+  // 列宽写成 min-width：图标类插件给链接加了图标时让列自己长，而不是把哈希挤断行
   &__hash {
-    color: var(--b3-theme-primary);
+    display: flex;
     flex: 0 0 auto;
     font-family: var(--b3-font-family-code);
     font-size: var(--b3-font-size);
+    margin-right: var(--commit-hash-gap);
     min-width: var(--commit-hash-column);
-    text-align: left;
-    text-decoration: none;
     white-space: nowrap;
+  }
+
+  &__hash-link {
+    color: var(--b3-theme-primary);
+    text-decoration: none;
 
     &:hover {
       text-decoration: underline;
@@ -164,16 +187,18 @@
     color: var(--b3-theme-on-surface);
     font-family: var(--b3-font-family-code);
     font-size: var(--b3-font-size);
-    padding: 0 8px 8px calc(var(--commit-hash-column) + 16px);
+    padding: 0 8px 8px calc(8px + var(--commit-hash-column) + var(--commit-hash-gap));
     white-space: pre-wrap;
     word-break: break-word;
   }
 
-  // 作者与提交时间：窄屏上不占行内那一列，改显示在展开的提交信息末尾
+  // 作者与提交时间（窄屏时连头像一起）：行内不占位置，改显示在展开的提交信息末尾
   &__commit-detail-meta {
+    align-items: center;
     color: var(--b3-theme-on-surface);
     display: none;
     font-family: var(--b3-font-family);
+    gap: 6px;
     margin-top: 6px;
   }
 
@@ -185,7 +210,88 @@
     }
 
     &__commit-detail-meta {
-      display: block;
+      display: flex;
+    }
+  }
+}
+
+// 渲染测试窗口：只是一段样例正文，给点内边距，超长时自己滚
+.bazaar-render-test {
+  max-height: 70vh;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
+// 移动端底部抽屉：外观全借思源原生的 `.mobile-bottom-sheet-dialog` / `.mobile-bottom-sheet`，
+// 这里只覆盖原生抽屉 60vh 的上限（高度由 drawer.ts 按视口比例写成行内值）。
+// 原生规则的选择器是两个类，这里把类名重复一次压过它，免得依赖两张样式表的先后顺序。
+.mobile-bottom-sheet-dialog.mobile-bottom-sheet-dialog .bazaar-release-notes--drawer {
+  // 首帧兜底：bind 之后高度由 drawer.ts 按视口比例（DEFAULT_RATIO）写成行内值
+  height: 70vh;
+  max-height: none;
+  padding-top: 0;
+}
+
+// 抓手：原生类负责画那道横杠，这里只说明它可以拖
+.bazaar-release-notes__handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+// 引用链接化的两种观感：移动端只加粗加下划线、文字颜色不变（GitHub 移动端就是这么画 #123 的），
+// 网页版是思源主色的下划线链接。只作用于插件自己新建的链接，内核渲染出来的 Markdown 链接不动。
+.bazaar-reference-link {
+  &--mobile {
+    color: inherit;
+    font-weight: bold;
+    text-decoration: underline;
+  }
+
+  &--web {
+    color: var(--b3-theme-primary);
+    text-decoration: underline;
+  }
+}
+
+// 「GitHub 加速」的独立窗口：一行一项，左边名字右边控件；分项开关只有名字，不带说明。
+.bazaar-acceleration {
+  &__row {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    min-height: 36px;
+  }
+
+  &__label {
+    flex: 0 0 auto;
+  }
+
+  // 地址输入框吃掉名字之外的宽度；窄屏上也不会把右边顶出容器
+  &__url {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__hint {
+    color: var(--b3-theme-error);
+    font-size: var(--b3-font-size);
+    margin-top: -4px;
+  }
+
+  // 分项开关：从属于总开关，靠缩进、次要色与更紧的行距和上面两项分开
+  &__items {
+    border-left: 2px solid var(--b3-theme-surface-lighter);
+    margin: 4px 0 0 8px;
+    padding-left: 16px;
+
+    .bazaar-acceleration__row {
+      min-height: 32px;
+    }
+
+    .bazaar-acceleration__label {
+      color: var(--b3-theme-on-surface);
+      font-size: var(--b3-font-size);
     }
   }
 }

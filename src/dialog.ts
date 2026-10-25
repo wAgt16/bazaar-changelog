@@ -2,9 +2,11 @@ import {Dialog, getFrontend, showMessage} from "siyuan";
 import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
+import {bindMobileDrawer} from "./drawer";
+import {emojiToUnicode} from "./emoji";
 import {escapeHTML} from "./escape";
 import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
-import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
+import {fetchReleases, parseFullChangelogOnly, parseGithubRepo, usesAcceleration} from "./github";
 import type {IRelease, TFailureReason} from "./github";
 import {t} from "./i18n";
 import type {TI18n} from "./i18n";
@@ -72,9 +74,13 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const i18n = options.i18n;
     const isMobile = ["mobile", "browser-mobile"].includes(getFrontend());
     const confirmable = Boolean(options.onConfirm);
+    /** 移动端可以用思源原生的下方抽屉展示；默认关，设置里手动开。 */
+    const drawer = isMobile && options.settings.mobileDrawer;
 
     currentDialog?.destroy();
     let destroyed = false;
+    /** 抽屉的手势绑定；销毁时要摘掉。 */
+    let disposeDrawer: (() => void) | undefined;
     /** 每次加载都换一个号，晚到的响应不能再改 DOM。 */
     let requestID = 0;
     let releases: IRelease[] = [];
@@ -108,11 +114,23 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         preferredSource: options.settings.preferredSource,
         confirmable,
         mobile: isMobile,
+        drawer,
     });
+
+    // 抽屉只靠下拉收回：没有右上角的关闭图标，也没有右下角的「关闭 / 取消」；
+    // 需要确认更新时保住「更新」那一个按钮，否则那一排按钮整个不要
+    const closeButton = drawer ? "" : `<button class="b3-button b3-button--cancel" data-type="close">${
+        escapeHTML(t(i18n, confirmable ? "cancel" : "close"))}</button>`;
+    const confirmButton = confirmable ? `<button class="b3-button b3-button--text" data-type="confirm">${
+        escapeHTML(t(i18n, "update"))}</button>` : "";
+    const actionRow = closeButton || confirmButton ? `<div class="b3-dialog__action">
+    ${closeButton}${closeButton && confirmButton ? `<div class="fn__space"></div>` : ""}${confirmButton}
+</div>` : "";
 
     const dialog = new Dialog({
         title: t(i18n, "changelog"),
-        width: isMobile ? "92vw" : "600px",
+        width: drawer ? "100%" : isMobile ? "92vw" : "600px",
+        hideCloseIcon: drawer,
         content: `<div class="${CLASS}__head">
     <span class="${CLASS}__label">${escapeHTML(t(i18n, "source"))}</span>
     <select class="b3-select ${CLASS}__select ${CLASS}__select--source" data-type="source">
@@ -130,13 +148,10 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     </div>
 </div>
 <div class="${CLASS}__body b3-typography">${escapeHTML(t(i18n, "loading"))}</div>
-<div class="b3-dialog__action">
-    <button class="b3-button b3-button--cancel" data-type="close">${escapeHTML(t(i18n, confirmable ? "cancel" : "close"))}</button>
-    ${confirmable ? `<div class="fn__space"></div>
-    <button class="b3-button b3-button--text" data-type="confirm">${escapeHTML(t(i18n, "update"))}</button>` : ""}
-</div>`,
+${actionRow}`,
         destroyCallback: () => {
             destroyed = true;
+            disposeDrawer?.();
             if (currentDialog === dialog) {
                 currentDialog = undefined;
             }
@@ -145,7 +160,15 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     currentDialog = dialog;
 
     // Dialog 的 containerClassName 还没进插件 API 的类型，直接给容器加类名
-    dialog.element.querySelector(".b3-dialog__container")?.classList.add(CLASS);
+    const containerElement = dialog.element.querySelector(".b3-dialog__container") as HTMLElement;
+    containerElement.classList.add(CLASS);
+    if (drawer) {
+        disposeDrawer = bindMobileDrawer({
+            dialog: dialog.element,
+            sheet: containerElement,
+            close: () => dialog.destroy(),
+        });
+    }
     const headElement = dialog.element.querySelector(`.${CLASS}__head`) as HTMLElement;
     const bodyElement = dialog.element.querySelector(`.${CLASS}__body`) as HTMLElement;
     const pick = <T extends Element>(type: string): T => headElement.querySelector(`[data-type="${type}"]`) as T;
@@ -158,7 +181,7 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const toElement = pick<HTMLSelectElement>("to");
     const openElement = pick<HTMLButtonElement>("open");
 
-    (dialog.element.querySelector('[data-type="close"]') as HTMLElement).addEventListener("click", () => {
+    dialog.element.querySelector('[data-type="close"]')?.addEventListener("click", () => {
         dialog.destroy();
     });
     if (confirmable) {
@@ -370,10 +393,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
     const botRangeOf = (markdown: string) =>
         options.settings.botReleaseNotesAsEmpty ? parseFullChangelogOnly(markdown) : undefined;
 
-    /** 正文里的 #123、owner/repo#123 与 @user 换成 GitHub 链接，跟着设置开关走。 */
+    /**
+     * 正文里的 #123、owner/repo#123 与 @user 换成 GitHub 链接，观感跟着设置走：
+     * 「禁用」时整段不做，正文保持原样；两种样式由 index.scss 里的类名决定。
+     */
     const linkify = (container: HTMLElement) => {
-        if (options.settings.githubReferences) {
-            linkifyGitHub(container, repo);
+        const style = options.settings.referenceLinkStyle;
+        if (style !== "off") {
+            linkifyGitHub(container, repo, style);
         }
     };
 
@@ -586,14 +613,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             // 开了加速时不管对方回什么状态码都可能是反代不代理 compare 接口，所以不看状态码；
             // 直连失败多半是限流或网络，那句话会把人带偏，因此不加
             const reason = reasonText(result.reason);
-            const hint = options.settings.githubAcceleration ?
-                t(i18n, "commitsAccelerationUnsupported", {reason}) : reason;
+            const accelerated = usesAcceleration(options.settings, "commits");
+            const hint = accelerated ? t(i18n, "commitsAccelerationUnsupported", {reason}) : reason;
             // compare 取不到时列表接口往往还能用：「不限 → HEAD」走的就是 /commits
             const offered = range.base !== "" || range.head !== "HEAD";
             debug("commits: failed", {
                 range,
                 reason: result.reason,
-                acceleration: options.settings.githubAcceleration,
+                acceleration: accelerated,
                 fallback: offered,
             });
             if (!offered) {
@@ -611,9 +638,42 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         renderCommits(result.commits, result.total);
     };
 
+    /** 提交者头像；没有地址就不建元素，加载失败则摘掉。 */
+    const avatarImage = (commit: ICommit): HTMLImageElement | undefined => {
+        if (!commit.avatar) {
+            return undefined;
+        }
+        const avatar = document.createElement("img");
+        avatar.className = `${CLASS}__avatar`;
+        avatar.alt = "";
+        avatar.loading = "lazy";
+        avatar.referrerPolicy = "no-referrer";
+        // 一开始就显示：懒加载只对可见的图生效，先藏起来（display:none）的话浏览器可能
+        // 永远不去取这张图，也就永远等不到显示它。取不到时再摘掉。
+        avatar.addEventListener("error", () => avatar.classList.add("fn__none"));
+        avatar.src = commit.avatar;
+        return avatar;
+    };
+
     /**
-     * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，作者与日期靠右。
-     * 窄屏上没有靠右的位置，作者与日期改到展开的提交信息末尾（同一个节点，由 CSS 决定显示在哪）。
+     * 「头像 + 名字 · 日期」：头像与名字同在一个内联盒里，两者之间的间距只由这个盒子的 gap 决定
+     * —— 挂在外面那层 flex 上时，容器一宽（窄屏的行内、或内容很短的行）头像和名字就被拉开了。
+     */
+    const authorLine = (commit: ICommit, metaText: string): HTMLElement => {
+        const author = document.createElement("span");
+        author.className = `${CLASS}__author`;
+        const avatar = avatarImage(commit);
+        if (avatar) {
+            author.append(avatar);
+        }
+        author.append(document.createTextNode(metaText));
+        return author;
+    };
+
+    /**
+     * 一条提交一行：短哈希固定在最左一列（各行对齐），中间是提交信息首行，
+     * 右侧是提交者头像、名字与日期 —— 头像紧贴在名字左边。
+     * 窄屏上没有靠右的位置，这一组改到展开的提交信息末尾（同一份内容，由 CSS 决定显示在哪）。
      * 点这一行展开完整提交信息，展开的内容与提交信息列对齐。
      */
     const commitItem = (commit: ICommit): HTMLElement => {
@@ -622,37 +682,47 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const row = document.createElement("div");
         row.className = "b3-list-item";
         row.setAttribute("data-type", "commit");
+        // 哈希列：列本身负责对齐与留白，链接只包住哈希那几个字。
+        // 以前把列宽直接写在 <a> 上，哈希右边那一截空白也算链接，点中间的空白会跳走。
+        const hashCell = document.createElement("span");
+        hashCell.className = `${CLASS}__hash`;
         const hash = document.createElement("a");
-        hash.className = `${CLASS}__hash`;
+        hash.className = `${CLASS}__hash-link`;
         hash.setAttribute("data-type", "commit-link");
         hash.href = commitURL(repo, commit.sha);
         hash.target = "_blank";
         hash.rel = "noopener noreferrer";
         hash.textContent = shortSha(commit.sha);
-        row.append(hash);
+        hashCell.append(hash);
+        row.append(hashCell);
         const first = document.createElement("div");
         first.className = "b3-list-item__first";
         const text = document.createElement("span");
         text.className = "b3-list-item__text";
-        text.textContent = commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage");
+        // 提交信息是我们自己拼的纯文本，`:tada:` 这类短代码得自己换；正文走内核的 Lute，不用管
+        text.textContent = emojiToUnicode(
+            commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage"),
+        );
         linkify(text);
         first.append(text);
         row.append(first);
-        const meta = document.createElement("span");
-        meta.className = "b3-list-item__meta";
         const date = commit.date.slice(0, 10);
         const metaText = [commit.author, date].filter((value) => value).join(" · ");
-        meta.textContent = metaText;
+        const meta = document.createElement("span");
+        meta.className = "b3-list-item__meta";
+        if (metaText || commit.avatar) {
+            meta.append(authorLine(commit, metaText));
+        }
         row.append(meta);
         const detail = document.createElement("div");
         detail.className = `${CLASS}__commit-detail fn__none`;
-        detail.textContent = commit.message.trim() || t(i18n, "commitNoMessage");
+        detail.textContent = emojiToUnicode(commit.message.trim() || t(i18n, "commitNoMessage"));
         linkify(detail);
-        if (metaText) {
+        if (metaText || commit.avatar) {
             // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
             const note = document.createElement("div");
             note.className = `${CLASS}__commit-detail-meta`;
-            note.textContent = metaText;
+            note.append(authorLine(commit, metaText));
             detail.append(note);
         }
         row.addEventListener("click", (event) => {

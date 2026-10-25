@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {abortable, mockResponse, stubFetch} from "../helpers/network";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 
 type CommitsModule = typeof import("../../src/commits");
 type TokenModule = typeof import("../../src/token");
@@ -9,18 +8,20 @@ type TokenModule = typeof import("../../src/token");
 let commits: CommitsModule;
 let token: TokenModule;
 
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
-
 const API = "https://api.github.com/repos/owner/repo";
 
 /** compare 是旧的在前；列表接口是新的在前，两种顺序各按接口的真实样子摆。 */
 const rawCommits = [
     {
         sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        author: {avatar_url: "https://avatars.githubusercontent.com/u/1?v=4"},
         commit: {message: "first\n\nbody", author: {name: "Alice", date: "2024-01-01T10:00:00Z"}},
     },
     {
         sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        // 没关联到账号：author 是 null，头像只能从 committer 那一侧拿
+        author: null,
+        committer: {avatar_url: "https://avatars.githubusercontent.com/u/2?v=4"},
         commit: {message: "second", author: {name: "Bob", date: "2024-02-02T10:00:00Z"}},
     },
 ];
@@ -72,8 +73,7 @@ describe("fetchCommits 的地址", () => {
     it("开了加速时改走加速地址", async () => {
         const {calls} = stubFetch(() => mockResponse([]));
         await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
         }), 3000);
         expect(calls[0].url).toBe(`https://gh-proxy.com/${API}/compare/a...b`);
     });
@@ -86,10 +86,41 @@ describe("fetchCommits 的响应", () => {
             status: "ok",
             total: 2,
             commits: [
-                {sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", message: "second", author: "Bob", date: "2024-02-02T10:00:00Z"},
-                {sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", message: "first\n\nbody", author: "Alice", date: "2024-01-01T10:00:00Z"},
+                {
+                    sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    message: "second",
+                    author: "Bob",
+                    date: "2024-02-02T10:00:00Z",
+                    avatar: "https://avatars.githubusercontent.com/u/2?v=4",
+                },
+                {
+                    sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    message: "first\n\nbody",
+                    author: "Alice",
+                    date: "2024-01-01T10:00:00Z",
+                    avatar: "https://avatars.githubusercontent.com/u/1?v=4",
+                },
             ],
         });
+    });
+
+    it("头像按「头像」这一项决定是否走加速，没关联账号时为空", async () => {
+        const {calls} = stubFetch(() => mockResponse([
+            {sha: "a".repeat(40), author: {avatar_url: "https://avatars.githubusercontent.com/u/1?v=4"}},
+            {sha: "b".repeat(40), commit: {message: "unlinked"}},
+        ]));
+        const accelerated = settings({
+            // 只给头像开加速：接口地址直连，头像地址走前缀
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", commits: false}),
+        });
+        const result = await commits.fetchCommits("owner/repo", {base: "", head: "HEAD"}, accelerated, 3000);
+        expect(calls[0].url).toBe(`${API}/commits?per_page=100`);
+        if (result.status === "ok") {
+            expect(result.commits.map((commit) => commit.avatar)).toEqual([
+                "https://gh-proxy.com/https://avatars.githubusercontent.com/u/1?v=4",
+                "",
+            ]);
+        }
     });
 
     it("列表接口本来就是新的在前，不再掉头，total 取实际条数", async () => {
@@ -132,7 +163,13 @@ describe("fetchCommits 的响应", () => {
         expect(result).toEqual({
             status: "ok",
             total: 1,
-            commits: [{sha: "cccccccccccccccccccccccccccccccccccccccc", message: "", author: "", date: ""}],
+            commits: [{
+                sha: "cccccccccccccccccccccccccccccccccccccccc",
+                message: "",
+                author: "",
+                date: "",
+                avatar: "",
+            }],
         });
     });
 
@@ -214,6 +251,20 @@ describe("fetchCommits 的请求头与缓存", () => {
         const {fetchMock} = stubFetch(() => mockResponse(rawCommits));
         await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000);
         await commits.fetchCommits("owner/repo", {base: "a", head: "c"}, settings(), 3000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("只翻「头像」加速开关时不吃上一轮缓存", async () => {
+        const {fetchMock} = stubFetch(() => mockResponse(rawCommits));
+        // 提交记录的地址两项一样，差别只在头像那一项：缓存里存的是解析好的头像地址
+        const direct = settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.example/", avatars: false}),
+        });
+        const accelerated = settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.example/", avatars: true}),
+        });
+        await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, direct, 3000);
+        await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, accelerated, 3000);
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 

@@ -1,12 +1,14 @@
 import {Plugin, Setting, showMessage} from "siyuan";
+import {openAccelerationDialog} from "./acceleration";
 import {observeBazaarReadme} from "./bazaarDom";
 import type {TI18n} from "./i18n";
 import {t} from "./i18n";
 import "./index.scss";
 import {debug, setDebugEnabled, warn} from "./logger";
+import {openRenderTest} from "./rendertest";
 import {createSecretKey, decryptSecret, encryptSecret, exportSecretKey, importSecretKey} from "./secret";
 import {DEFAULT_SETTINGS, mergeSettings} from "./settings";
-import type {ISettings} from "./settings";
+import type {IGithubAcceleration, ISettings} from "./settings";
 import {hasGithubToken, setGithubToken} from "./token";
 import {interceptBazaarUpdate} from "./update";
 
@@ -14,15 +16,20 @@ const STORAGE_NAME = "settings";
 /** 令牌与它的钥匙分开存：设置文件被单独贴出来时不会连带泄漏令牌。 */
 const TOKEN_STORAGE_NAME = "githubToken";
 const TOKEN_KEY_STORAGE_NAME = "githubTokenKey";
+/**
+ * 渲染测试窗口的入口只挂在 `window` 上：设置面板里不给开关，控制台执行
+ * `bazaarChangelogRenderTest()` 才打开，而且只在调试模式开着时才挂出来。卸载时删掉，
+ * 重载后不会留下上一次的闭包。
+ */
+export const RENDER_TEST_COMMAND = "bazaarChangelogRenderTest";
 
 export default class ReleaseNotePlugin extends Plugin {
     private settings: ISettings = {...DEFAULT_SETTINGS};
     private readonly disposers: Array<() => void> = [];
     private sourceElement: HTMLSelectElement | undefined;
-    private accelerationElement: HTMLInputElement | undefined;
-    private accelerationURLElement: HTMLInputElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
-    private referencesElement: HTMLInputElement | undefined;
+    private referencesElement: HTMLSelectElement | undefined;
+    private drawerElement: HTMLInputElement | undefined;
     private tokenElement: HTMLInputElement | undefined;
     private debugElement: HTMLInputElement | undefined;
     /** 解出来的令牌明文只放内存，落盘的是 githubToken 里的密文。 */
@@ -64,40 +71,19 @@ export default class ReleaseNotePlugin extends Plugin {
             },
         });
         this.setting.addItem({
-            title: t(this.texts(), "githubReferences"),
-            description: t(this.texts(), "githubReferencesTip"),
-            createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "checkbox";
-                element.className = "b3-switch";
-                element.checked = this.settings.githubReferences;
-                this.referencesElement = element;
-                return element;
-            },
+            title: t(this.texts(), "referenceLinkStyle"),
+            description: t(this.texts(), "referenceLinkStyleTip"),
+            createActionElement: () => this.createReferenceStyleElement(),
         });
         this.setting.addItem({
             title: t(this.texts(), "githubAcceleration"),
             description: t(this.texts(), "githubAccelerationTip"),
             createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "checkbox";
-                element.className = "b3-switch";
-                element.checked = this.settings.githubAcceleration;
-                this.accelerationElement = element;
-                return element;
-            },
-        });
-        this.setting.addItem({
-            title: t(this.texts(), "githubAccelerationURL"),
-            description: t(this.texts(), "githubAccelerationURLTip"),
-            createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "text";
-                element.className = "b3-text-field fn__block";
-                element.placeholder = "https://gh-proxy.com/";
-                element.value = this.settings.githubAccelerationURL;
-                this.suppressOpenKeyboard(element);
-                this.accelerationURLElement = element;
+                const element = document.createElement("button");
+                element.type = "button";
+                element.className = "b3-button b3-button--outline";
+                element.textContent = t(this.texts(), "githubAccelerationConfigure");
+                element.addEventListener("click", () => this.openAcceleration());
                 return element;
             },
         });
@@ -112,6 +98,18 @@ export default class ReleaseNotePlugin extends Plugin {
                 element.value = this.token;
                 this.suppressOpenKeyboard(element);
                 this.tokenElement = element;
+                return element;
+            },
+        });
+        this.setting.addItem({
+            title: t(this.texts(), "mobileDrawer"),
+            description: t(this.texts(), "mobileDrawerTip"),
+            createActionElement: () => {
+                const element = document.createElement("input");
+                element.type = "checkbox";
+                element.className = "b3-switch";
+                element.checked = this.settings.mobileDrawer;
+                this.drawerElement = element;
                 return element;
             },
         });
@@ -132,11 +130,14 @@ export default class ReleaseNotePlugin extends Plugin {
             interceptBazaarUpdate(this.texts, () => this.settings),
             observeBazaarReadme(this.texts, () => this.settings),
         );
+        // 渲染测试窗口只在调试模式下挂出来，设置面板里没有入口
+        this.syncRenderTestCommand();
         debug("onload: bazaar readme observer and update interception are attached");
     }
 
     override onunload() {
         this.disposers.splice(0).forEach((dispose) => dispose());
+        delete (window as unknown as Record<string, unknown>)[RENDER_TEST_COMMAND];
         debug("onunload: listeners removed");
     }
 
@@ -180,6 +181,25 @@ export default class ReleaseNotePlugin extends Plugin {
         return element;
     }
 
+    /** 引用链接化的样式：禁用、GitHub 移动端样式（加粗加下划线）或 GitHub 网页样式（蓝色下划线）。 */
+    private createReferenceStyleElement(): HTMLSelectElement {
+        const element = document.createElement("select");
+        element.className = "b3-select fn__block";
+        for (const [value, key] of [
+            ["off", "referenceLinkOff"],
+            ["mobile", "referenceLinkMobile"],
+            ["web", "referenceLinkWeb"],
+        ] as const) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = t(this.texts(), key);
+            element.append(option);
+        }
+        element.value = this.settings.referenceLinkStyle;
+        this.referencesElement = element;
+        return element;
+    }
+
     /**
      * 思源构建插件设置弹窗时，会把每个 input/textarea 交给 dialog.bindInput()，
      * 而 bindInput() 第一件事就是 focus()——这时元素还没插进 DOM。
@@ -200,10 +220,10 @@ export default class ReleaseNotePlugin extends Plugin {
     private async saveSettings() {
         const next = mergeSettings({
             preferredSource: this.sourceElement?.value,
-            githubAcceleration: this.accelerationElement?.checked,
-            githubAccelerationURL: this.accelerationURLElement?.value,
+            githubAcceleration: this.settings.githubAcceleration,
             botReleaseNotesAsEmpty: this.botReleaseNotesElement?.checked,
-            githubReferences: this.referencesElement?.checked,
+            referenceLinkStyle: this.referencesElement?.value,
+            mobileDrawer: this.drawerElement?.checked,
             debug: this.debugElement?.checked,
         });
         if (!(await this.persistSettings(next))) {
@@ -217,6 +237,8 @@ export default class ReleaseNotePlugin extends Plugin {
         }
         this.syncSettingControls();
         setDebugEnabled(this.settings.debug);
+        // 调试模式是刚改的：开就挂上渲染测试入口，关就摘掉
+        this.syncRenderTestCommand();
     }
 
     /**
@@ -309,21 +331,43 @@ export default class ReleaseNotePlugin extends Plugin {
         return true;
     }
 
+    /** 「GitHub 加速」的独立配置窗口：总开关、地址与分项开关都在里面改。 */
+    private openAcceleration() {
+        openAccelerationDialog({
+            i18n: this.texts(),
+            value: this.settings.githubAcceleration,
+            onSave: (value) => this.saveAcceleration(value),
+        });
+    }
+
+    private async saveAcceleration(value: IGithubAcceleration): Promise<boolean> {
+        return this.persistSettings(mergeSettings({...this.settings, githubAcceleration: value}));
+    }
+
+    /** 渲染测试窗口：控制台执行 `bazaarChangelogRenderTest()` 才打开，且只在调试模式下可用。 */
+    private syncRenderTestCommand() {
+        const globals = window as unknown as Record<string, unknown>;
+        if (!this.settings.debug) {
+            delete globals[RENDER_TEST_COMMAND];
+            return;
+        }
+        globals[RENDER_TEST_COMMAND] = () => {
+            openRenderTest({i18n: this.texts(), settings: this.settings});
+        };
+    }
+
     private syncSettingControls() {
         if (this.sourceElement) {
             this.sourceElement.value = this.settings.preferredSource;
-        }
-        if (this.accelerationElement) {
-            this.accelerationElement.checked = this.settings.githubAcceleration;
-        }
-        if (this.accelerationURLElement) {
-            this.accelerationURLElement.value = this.settings.githubAccelerationURL;
         }
         if (this.botReleaseNotesElement) {
             this.botReleaseNotesElement.checked = this.settings.botReleaseNotesAsEmpty;
         }
         if (this.referencesElement) {
-            this.referencesElement.checked = this.settings.githubReferences;
+            this.referencesElement.value = this.settings.referenceLinkStyle;
+        }
+        if (this.drawerElement) {
+            this.drawerElement.checked = this.settings.mobileDrawer;
         }
         if (this.tokenElement) {
             this.tokenElement.value = this.token;

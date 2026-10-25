@@ -1,97 +1,40 @@
-# bazaar-changelog 实现说明
+# bazaar-changelog
 
 思源插件：把集市包的 GitHub 发行说明、仓库 CHANGELOG 与提交记录做成思源的「更新日志」弹窗，
-并用同一个弹窗替代集市更新的原生确认弹窗。用户可见的行为、设置表与限制见
-[README.zh-CN.md](./README.zh-CN.md)，这里只写「为什么这么做」——代码里看得出来的不再重复。
+并用同一个弹窗确认集市包更新。
 
-## 挂在思源内部结构上的三处
+- 用户可见的行为与限制：[README.zh-CN.md](./README.zh-CN.md)
+- 「为什么这么做」、踩过的坑、挂上去的思源内部结构：[docs/development.md](./docs/development.md)
 
-下面三处依赖思源的实现细节，思源一改就失效。动到它们时，请一并更新这里。
+## 命令
 
-- **集市详情页的版本入口**：思源每次渲染详情页都用 `innerHTML` 整块换掉 `#configBazaarReadme`，
-  所以入口只能靠 `MutationObserver` 在替换之后重新补；入口做成 `<button>` 而不是 `<a>`，因为思源的
-  集市 click 委托会丢弃 `<a>` 上的点击。「集市信息」分组优先用
-  `window.siyuan.languages.bazaarMarketInfo` 定位，取不到才退回「同一分组里含『发行日期』的那一行」，
-  否则会误认安装信息里的「版本」。
-- **更新按钮**：思源的「更新」走集市自己的 click 委托，插件改不了它的回调，只能捕获阶段拦下、
-  先弹自己的弹窗、确认后再**重放**一次点击，让思源原生流程（loading、列表刷新、错误提示）照常跑完。
-  重放是同步的，返回时原生确认弹窗已经建好，必须**在同一帧里**点掉它并把元素从 DOM 摘掉：思源的
-  `Dialog` 要 50ms 才加 `b3-dialog--open`，而 `destroy()` 要 190ms 才移除元素，只点确认会闪一下。
-  拿不到 `window.siyuan.dialogs` / `#confirmDialogConfirmBtn` 时插件不动任何弹窗，只留一条 console
-  警告，绝不自己实现一套更新流程。
-- **插件设置面板**：思源会把每个 input/textarea 交给 `dialog.bindInput()`，而它第一件事就是
-  `focus()`，且这次 focus 发生在元素插入 DOM 之前；移动端重写了 `focus()`，只要 `canInput()` 判为
-  可输入就调原生 `showKeyboard()`，于是设置面板一打开就弹键盘。修法是建输入框时先写上
-  `setAttribute("readonly", "readonly")`，本轮任务结束再摘掉。属性值必须正好是 `"readonly"`：
-  3.7.x 的 `canInput()` 比的是 `getAttribute("readonly") === "readonly"`，只设 `element.readOnly`
-  得到的是空字符串。
+```bash
+npm install
+npm run typecheck   # 静态检查
+npm test            # 单元与 DOM 测试；带覆盖率用 npm run test:coverage
+npm run build       # 产出 dist/ 与 package.zip
+npm run check       # 上面三步一起跑；CI 分开跑 typecheck / test:coverage / build
+npm run icon        # assets/icon.svg -> assets/icon.png
+npm run preview     # 预览图截图，首次需 npx playwright install chromium
 
-## 几处刻意的取舍
+node scripts/build-emoji-map.mjs                  # 重新生成 src/emoji-map.ts（gemoji 的别名表）
+node scripts/build-preview-css.mjs <思源仓库路径>   # 重新生成 assets/preview.css
+```
 
-- **「最新」以集市为准**，不看 GitHub API 的 `latest`：集市索引 1–3 小时才更新一次，只有用集市下发的
-  `available.version` 才和用户在集市里看到的一致，比它新的发行版整条不显示。
-- **CHANGELOG 与发行说明都走 GitHub 官方域名**：CHANGELOG 拼
-  `https://raw.githubusercontent.com/<owner>/<repo>/HEAD/<path>`。raw 不带 ref 会 400，所以固定写
-  `HEAD`，由 GitHub 解析成仓库默认分支。它和 `api.github.com` 一样在大陆常常不可达，好处是两者
-  同属 GitHub 官方域名，一个前缀式加速开关就能同时覆盖，不必为 CDN 单开一条路。
-- **只有 404（或 200 但正文空白）算「这个路径上没有文件」**：`403` / `429` / `5xx` / 网络错误只是
-  这次没拿到，拿来报「没有」会骗用户。
-- **确认「没有 CHANGELOG」比首次超时更耐心**：三个候选都 404 才算数，而慢网络下这几个 404 也可能
-  擦过首次超时。到点后只要没有候选**真正失败**就继续等（到 `CONFIRM_TIMEOUT`），
-  否则用户会先看到「超时」、点一次「重新获取」才看到「没有 CHANGELOG」；真正失败时立刻放弃。
-- **失败的第二行写人话原因**：三个来源共用一个 `TFailureReason`（网络 / HTTP 状态码 / 返回内容不认得），
-  弹窗把它写成主提示下面的小字，不直接透传 `TypeError: Failed to fetch` 这类原文。CHANGELOG 还有一句
-  「网络状况差或这个仓库没有 CHANGELOG」的兜底，只在**没有候选真正失败**（纯粹是慢）时才用 ——
-  那时确实没有具体原因可给。
-- **取不到一律不换来源**：只有确定「这一版没有发行说明」或「这个仓库没有 CHANGELOG」才自动换到另一种，
-  且**来源下拉要跟着一起动**（`switchSource`）—— 正文换了来源而下拉还停在旧项，用户看到的提示就和
-  来源对不上（例如停在「发行说明」却写着「这个仓库没有 CHANGELOG」）。取不到时那条路换过去也只是
-  再失败一次，所以留着当前来源，把原因写出来。
-- **发行版列表为空不说「这个仓库没有发行版」**：上架集市的包一定有发行版，拿到空列表按
-  「该版本没有发行说明」（`releaseNotesEmpty`）处理就够了，不为它单造一句话。
-- **GitHub 加速对发行说明、提交记录与 CHANGELOG 都生效**：加速地址是实现无关的前缀式反代，分别拼在
-  `api.github.com` 与 `raw.githubusercontent.com` 前面。
-- **弹窗里的代码块不做语法高亮**：思源是在内部调 `highlightRender()`，插件要用得自己加载内核
-  `/stage/protyle` 下的 highlight.js 与代码主题，收益不值这份复杂度。
-- **提交记录用 compare 而不是自己过滤 `/commits`**：范围由用户选的两个版本决定，只有 compare 能直接
-  给出「head 有而 base 没有」的集合。起点选「不限」时退回 `/commits` 列该端点最近的提交 —— 一个仓库
-  只有 0–1 个发行版时没有可比较的起点，而这恰恰是「既没有 CHANGELOG 也没有发行说明」的仓库的常态。
-- **两个接口的提交方向相反**：compare 是旧的在前，`/commits` 是新的在前，所以只有走 compare 时才
-  `reverse()`；无条件反转会让「不限 → HEAD」那一屏从旧到新，用户刚被那个一键入口领过去就会看到。
-- **截断说明紧跟在「列出 N 条提交」后面**：compare 一次只给 250 条，`total_commits` 却可能是几千，
-  说明单独摆一行时在列表下面，要翻过几百行才看得见。
-- **提交记录的默认起点是本机已安装版本**，不是上一个发行版：用户关心的是「我这版之后改了什么」。
-  安装版本与集市最新相同（刚更新完）或取不到时，才退回上一个发行版。
-- **只有「正文仅一行 Full Changelog 链接」才算空发行说明**（`parseFullChangelogOnly`）：多一行正文
-  就不算，否则手工写的说明会被吞掉。识别出来后不是简单报「没有」，而是拿链接里的范围直接跳到提交
-  记录 —— 那种发行说明本来就只有这段信息。
-- **「查看提交记录」只在两种来源都确认没有内容时才给**：仓库没有 CHANGELOG、且这一版没有发行说明才出这个
-  入口。只有一个来源缺失时，另一种里的正文照样能读，把人引到提交记录只是绕远 —— 那条路本来就在来源下拉里。
-- **引用链接化只改文本节点，不重新解析 Markdown**：正文是内核渲染好的 HTML，再解析一遍会改掉排版；
-  `a` / `code` / `pre` 里的文字跳过，`@user` 前面紧挨着字母数字时不算（`a@b.com`、路径里的 `#`）。
-- **令牌只发给 `api.github.com`**：`willAuthorize()` 看的是最终 URL，开了加速时 URL 落在第三方前缀上，
-  自然不带 Authorization；CHANGELOG 走 `raw.githubusercontent.com`，也从不带。日志只记长度不记令牌。
-- **令牌的「加密」只是不明文**：浏览器里拿不到系统密钥环，钥匙与密文都在插件私有存储，挡的是设置文件
-  被单独贴出去；README 的已知限制里写明了这一点，不要把它说成真正的密钥保护。
-- **只接管本仓库的三类链接**（`classifyGitHubLink`：changelog 文件、发行版页面、提交对比）：别的仓库、
-  issue 与单条 commit 的链接照常交给浏览器 —— 插件没有它们的本地视图，接管了也只能再打开一次。
-  带修饰键（Ctrl/⌘/Shift/Alt）时同样不接管，用户还能自己决定在哪看。
-- **「在 GitHub 中打开」按当前来源现算地址**：CHANGELOG 要用实际命中的文件路径（`fetchChangelog` 返回
-  `path`），拿到之前按钮置灰；提交记录在起点为「不限」时指向该端点的提交列表，而不是拼一个无效的
-  compare 地址。
-- **加速下取不到提交不看状态码**：部分反代不代理 `compare` 接口，回的码五花八门（403、404、502 都有），
-  所以只要开着加速又没拿到就多给一句「加速服务可能不支持获取选定版本范围的提交」；直连时失败多半是限流
-  或网络，那句话会把人带偏，因此不加。这次的原因照旧给，加速时并进那句话的括号里，直连时单独成行。
-- **失败的提交提示后面固定挂一个「查看不限到 HEAD 的提交」**：起点为空时走的是 `/commits`，反代一般代理
-  这个接口，一键就能绕开 `compare`；范围本来就是「不限 → HEAD」时不挂，点它等于重试同一个地址。
+## 规则
+
+- 改动要有测试兜底：`npm run test:coverage` 的门槛是 90 / 85 / 95 / 90，掉下来就补测试，不调门槛。
+- 一个 issue 一个提交，提交信息里引用它；提交信息用 `type(scope): lowercase` 的英文祈使句。
+- 破坏性改动写成 `type(scope)!: …`，并在正文里补一段 `BREAKING CHANGE:` 说明影响面 —— 两种写法
+  都认，发行说明会把它们单独列进 💥 Breaking Changes（见 `scripts/release-notes.mjs`）。
+- 只在发版时动版本号：`plugin.json`、`package.json`、`package-lock.json` 的根版本一起改，单独一个
+  `chore(release): x.y.z` 提交。
 
 ## 约定
 
 - 只用思源原生类与 `--b3-*` 变量，不硬编码思源已暴露的颜色、字号、圆角。
 - 禁止 `fs`、`require("electron")` 等 Node API；持久化只用 `plugin.loadData/saveData`，写完读回校验。
 - 日志一律走 `src/logger.ts`：`debug()` 跟着设置里的「调试模式」，关闭时一行都不打，不要用裸
-  `console.log`；`warn()` 只留给「插件没接上」这类异常。写日志时带上耗时与关键参数，
-  用户好把输出直接贴回来定位。
-- `assets/preview.css` 不手写，由 `scripts/build-preview-css.mjs <思源仓库路径>` 从思源源码编译；
-  预览画面只画弹窗的常规状态，所以只有动了预览画面本身才需要重跑编译与 `npm run preview`。
+  `console.log`；`warn()` 只留给「插件没接上」这类异常。写日志时带上耗时与关键参数。
+- 生成文件不手改：`src/emoji-map.ts`、`assets/preview.css`、`assets/icon.png`、`assets/preview.png`。
 - 构建产物（`dist/`、`package.zip`、仓库根 `index.js` / `index.css` / `i18n/`）不入库。
