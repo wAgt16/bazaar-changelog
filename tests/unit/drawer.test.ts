@@ -132,6 +132,20 @@ describe("bindMobileDrawer", () => {
         expect(parseInt(sheet.style.height, 10)).toBeLessThanOrEqual(Math.round(768 * 0.92));
     });
 
+    it("手势被系统取消时回原位，也不收起", async () => {
+        const {sheet, close, handle} = await setup();
+
+        fireTouch(handle, "touchstart", 300);
+        fireTouch(handle, "touchmove", 200);
+        expect(sheet.style.height).toBe(`${DEFAULT_HEIGHT + 100}px`);
+
+        // touchcancel 之后这次手势就结束了：随后哪怕来一个很远的 touchend 也不该当成拖到底
+        fireTouch(handle, "touchcancel", 200);
+        expect(sheet.style.transition).toBe("");
+        fireTouch(handle, "touchend", 900);
+        expect(close).not.toHaveBeenCalled();
+    });
+
     it("拖到最小高度再松手就收起", async () => {
         const {sheet, close, handle} = await setup();
 

@@ -158,6 +158,29 @@ describe("onload", () => {
         expect(typeof mocks.interceptBazaarUpdate.mock.calls[0][1]).toBe("function");
     });
 
+    it("更新拦截与集市观察拿到的是当前设置，改完设置立刻可见", async () => {
+        let fromUpdate: (() => {debug: boolean}) | undefined;
+        let fromReadme: (() => {debug: boolean}) | undefined;
+        mocks.interceptBazaarUpdate.mockImplementation((_texts: unknown, current: () => {debug: boolean}) => {
+            fromUpdate = current;
+            return disposeUpdate;
+        });
+        mocks.observeBazaarReadme.mockImplementation((_texts: unknown, current: () => {debug: boolean}) => {
+            fromReadme = current;
+            return disposeReadme;
+        });
+        const plugin = await createPlugin();
+        await plugin.onload();
+        expect(fromUpdate?.().debug).toBe(false);
+        expect(fromReadme?.().debug).toBe(false);
+
+        // 两者都是在用到的那一刻才读设置，因此改完设置不用重新 onload
+        byTitle(plugin, "调试模式").checked = true;
+        await confirm(plugin);
+        expect(fromUpdate?.().debug).toBe(true);
+        expect(fromReadme?.().debug).toBe(true);
+    });
+
     it("调试模式打开时输出日志，关闭时一行都不打", async () => {
         const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
@@ -201,6 +224,33 @@ describe("onload", () => {
 
         await flush();
         expect(token.hasAttribute("readonly")).toBe(false);
+    });
+
+    it("读设置失败时按默认值启动", async () => {
+        const plugin = await createPlugin();
+        vi.spyOn(plugin, "loadData").mockImplementation(async (name: string) => {
+            if (name === "settings") {
+                throw new Error("storage unavailable");
+            }
+            return undefined;
+        });
+
+        await expect(plugin.onload()).resolves.toBeUndefined();
+        expect(byTitle(plugin, "优先加载").value).toBe("releaseNotes");
+        expect(byTitle(plugin, "移动端底部抽屉").checked).toBe(false);
+    });
+
+    it("令牌读不出来时当作没配", async () => {
+        const plugin = await createPlugin();
+        vi.spyOn(plugin, "loadData").mockImplementation(async (name: string) => {
+            if (name === "githubToken" || name === "githubTokenKey") {
+                throw new Error("storage unavailable");
+            }
+            return undefined;
+        });
+
+        await expect(plugin.onload()).resolves.toBeUndefined();
+        expect(byTitle(plugin, "GitHub 令牌").value).toBe("");
     });
 });
 
@@ -249,6 +299,18 @@ describe("保存设置", () => {
 
         await confirm(plugin);
         expect(stubState.messages).toContain("[bazaar-changelog] Error: boom");
+    });
+
+    it("落盘后读不回来时按刚保存的值继续", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        // 写盘本身成功，回读失败：内存里的设置不能因此丢掉这次保存
+        vi.spyOn(plugin, "loadData").mockRejectedValue(new Error("read failed"));
+
+        byTitle(plugin, "调试模式").checked = true;
+        await confirm(plugin);
+
+        expect((plugin as unknown as {settings: {debug: boolean}}).settings.debug).toBe(true);
     });
 });
 
@@ -393,6 +455,45 @@ describe("令牌的保存", () => {
         expect(await stored(plugin, "githubToken")).toBeUndefined();
         expect(await stored(plugin, "githubTokenKey")).toBeUndefined();
         expect(byTitle(plugin, "GitHub 令牌").value).toBe("");
+    });
+
+    it("删不掉密文时也把内存里的令牌清掉", async () => {
+        const plugin = await createPlugin();
+        const {createSecretKey, encryptSecret, exportSecretKey} = await import("../../src/secret");
+        const key = await createSecretKey();
+        await plugin.saveData("githubToken", await encryptSecret("ghp_stored", key));
+        await plugin.saveData("githubTokenKey", await exportSecretKey(key));
+        await plugin.onload();
+        const {hasGithubToken} = await import("../../src/token");
+        expect(hasGithubToken()).toBe(true);
+        // 存储已经删不动了：清理失败不该把这次清空整体算作失败
+        vi.spyOn(plugin, "removeData").mockRejectedValue(new Error("disk locked"));
+
+        byTitle(plugin, "GitHub 令牌").value = "";
+        await confirm(plugin);
+
+        expect(byTitle(plugin, "GitHub 令牌").value).toBe("");
+        expect(hasGithubToken()).toBe(false);
+    });
+
+    it("回读令牌时存储报错，按「没存下来」处理", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+        const plugin = await createPlugin();
+        await plugin.onload();
+        const original = plugin.loadData.bind(plugin);
+        vi.spyOn(plugin, "loadData").mockImplementation(async (name: string) => {
+            if (name === "githubToken" || name === "githubTokenKey") {
+                throw new Error("read failed");
+            }
+            return original(name);
+        });
+
+        byTitle(plugin, "GitHub 令牌").value = "ghp_new";
+        await confirm(plugin);
+
+        expect(stubState.messages.some((message) => message.includes("the token was not stored"))).toBe(true);
+        expect(byTitle(plugin, "GitHub 令牌").value).toBe("");
+        warn.mockRestore();
     });
 
     it("没有 Web Crypto 时明确提示，且不落盘", async () => {
