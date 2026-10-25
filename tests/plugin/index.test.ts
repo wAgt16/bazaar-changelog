@@ -118,6 +118,36 @@ describe("onload", () => {
         });
     });
 
+    it("渲染测试窗口只挂在 window 上，且只在调试模式开着时可用", async () => {
+        const quiet = await createPlugin();
+        await quiet.onload();
+        expect((window as any).bazaarChangelogRenderTest).toBeUndefined();
+
+        const loud = await createPlugin();
+        await loud.saveData("settings", {...DEFAULT_SETTINGS, debug: true});
+        await loud.onload();
+        const items = (loud.setting as any).items as Array<{title: string}>;
+        expect(items.map((item) => item.title)).not.toContain("渲染测试用例");
+
+        const command = (window as any).bazaarChangelogRenderTest;
+        expect(typeof command).toBe("function");
+        stubState.fetchPostHandler = (_url, _data, callback) => callback({code: 0, data: {html: "<p>样例</p>"}});
+        command();
+        await flush();
+        expect(document.querySelector(".b3-dialog .bazaar-render-test")?.textContent).toContain("样例");
+    });
+
+    it("关掉调试模式后入口一起摘掉", async () => {
+        const plugin = await createPlugin();
+        await plugin.saveData("settings", {...DEFAULT_SETTINGS, debug: true});
+        await plugin.onload();
+        expect(typeof (window as any).bazaarChangelogRenderTest).toBe("function");
+
+        byTitle(plugin, "调试模式").checked = false;
+        await confirm(plugin);
+        expect((window as any).bazaarChangelogRenderTest).toBeUndefined();
+    });
+
     it("挂上集市详情页与更新按钮的监听", async () => {
         const plugin = await createPlugin();
         await plugin.onload();
@@ -442,10 +472,14 @@ describe("令牌的保存", () => {
 describe("卸载与释放", () => {
     it("onunload 释放两个监听", async () => {
         const plugin = await createPlugin();
+        await plugin.saveData("settings", {...DEFAULT_SETTINGS, debug: true});
         await plugin.onload();
+        expect(typeof (window as any).bazaarChangelogRenderTest).toBe("function");
         plugin.onunload();
         expect(disposeUpdate).toHaveBeenCalledTimes(1);
         expect(disposeReadme).toHaveBeenCalledTimes(1);
+        // 渲染测试入口一并摘掉，重载后不会留着上一次的闭包
+        expect((window as any).bazaarChangelogRenderTest).toBeUndefined();
     });
 
     it("uninstall 清掉插件私有的存储文件", async () => {

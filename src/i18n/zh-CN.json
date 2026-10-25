@@ -63,6 +63,7 @@
   "tokenNeedsSecureContext": "当前访问方式不支持 Web Crypto，令牌无法加密保存；请用桌面端或 https 访问",
   "mobileDrawer": "移动端底部抽屉",
   "mobileDrawerTip": "在移动端用思源原生的下方抽屉显示更新日志：贴合屏幕两侧、默认占大半屏，拖动顶部抓手可以调高度，往下拉即可收回；抽屉里没有关闭按钮。默认关闭",
+  "renderTest": "渲染测试用例",
   "debugMode": "调试模式",
   "debugModeTip": "在控制台输出本插件的完整过程日志"
 }

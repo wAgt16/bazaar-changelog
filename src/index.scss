@@ -210,6 +210,13 @@
   }
 }
 
+// 渲染测试窗口：只是一段样例正文，给点内边距，超长时自己滚
+.bazaar-render-test {
+  max-height: 70vh;
+  overflow: auto;
+  padding: 16px 24px;
+}
+
 // 移动端底部抽屉：外观全借思源原生的 `.mobile-bottom-sheet-dialog` / `.mobile-bottom-sheet`，
 // 这里只覆盖原生抽屉 60vh 的上限（高度由 drawer.ts 按视口比例写成行内值）。
 // 原生规则的选择器是两个类，这里把类名重复一次压过它，免得依赖两张样式表的先后顺序。

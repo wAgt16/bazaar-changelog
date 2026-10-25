@@ -129,4 +129,8 @@
   用户好把输出直接贴回来定位。
 - `assets/preview.css` 不手写，由 `scripts/build-preview-css.mjs <思源仓库路径>` 从思源源码编译；
   预览画面只画弹窗的常规状态，所以只有动了预览画面本身才需要重跑编译与 `npm run preview`。
+- 渲染测试窗口只在控制台里开（`bazaarChangelogRenderTest()`，挂在 `window` 上、只在调试模式开着时
+  提供、卸载时摘掉），设置面板里不给入口。它把 `src/rendertest.ts` 里那份样例按弹窗的真实链路
+  （内核 Lute → DOMPurify → 引用链接化）渲染一遍；样例里加一类写法时，`tests/dom/rendertest.test.ts`
+  的语法清单要跟着加，否则样例会悄悄退化。
 - 构建产物（`dist/`、`package.zip`、仓库根 `index.js` / `index.css` / `i18n/`）不入库。

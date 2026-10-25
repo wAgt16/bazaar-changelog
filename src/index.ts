@@ -5,6 +5,7 @@ import type {TI18n} from "./i18n";
 import {t} from "./i18n";
 import "./index.scss";
 import {debug, setDebugEnabled, warn} from "./logger";
+import {openRenderTest} from "./rendertest";
 import {createSecretKey, decryptSecret, encryptSecret, exportSecretKey, importSecretKey} from "./secret";
 import {DEFAULT_SETTINGS, mergeSettings} from "./settings";
 import type {IGithubAcceleration, ISettings} from "./settings";
@@ -15,6 +16,12 @@ const STORAGE_NAME = "settings";
 /** 令牌与它的钥匙分开存：设置文件被单独贴出来时不会连带泄漏令牌。 */
 const TOKEN_STORAGE_NAME = "githubToken";
 const TOKEN_KEY_STORAGE_NAME = "githubTokenKey";
+/**
+ * 渲染测试窗口的入口只挂在 `window` 上：设置面板里不给开关，控制台执行
+ * `bazaarChangelogRenderTest()` 才打开，而且只在调试模式开着时才挂出来。卸载时删掉，
+ * 重载后不会留下上一次的闭包。
+ */
+export const RENDER_TEST_COMMAND = "bazaarChangelogRenderTest";
 
 export default class ReleaseNotePlugin extends Plugin {
     private settings: ISettings = {...DEFAULT_SETTINGS};
@@ -123,11 +130,14 @@ export default class ReleaseNotePlugin extends Plugin {
             interceptBazaarUpdate(this.texts, () => this.settings),
             observeBazaarReadme(this.texts, () => this.settings),
         );
+        // 渲染测试窗口只在调试模式下挂出来，设置面板里没有入口
+        this.syncRenderTestCommand();
         debug("onload: bazaar readme observer and update interception are attached");
     }
 
     override onunload() {
         this.disposers.splice(0).forEach((dispose) => dispose());
+        delete (window as unknown as Record<string, unknown>)[RENDER_TEST_COMMAND];
         debug("onunload: listeners removed");
     }
 
@@ -227,6 +237,8 @@ export default class ReleaseNotePlugin extends Plugin {
         }
         this.syncSettingControls();
         setDebugEnabled(this.settings.debug);
+        // 调试模式是刚改的：开就挂上渲染测试入口，关就摘掉
+        this.syncRenderTestCommand();
     }
 
     /**
@@ -330,6 +342,18 @@ export default class ReleaseNotePlugin extends Plugin {
 
     private async saveAcceleration(value: IGithubAcceleration): Promise<boolean> {
         return this.persistSettings(mergeSettings({...this.settings, githubAcceleration: value}));
+    }
+
+    /** 渲染测试窗口：控制台执行 `bazaarChangelogRenderTest()` 才打开，且只在调试模式下可用。 */
+    private syncRenderTestCommand() {
+        const globals = window as unknown as Record<string, unknown>;
+        if (!this.settings.debug) {
+            delete globals[RENDER_TEST_COMMAND];
+            return;
+        }
+        globals[RENDER_TEST_COMMAND] = () => {
+            openRenderTest({i18n: this.texts(), settings: this.settings});
+        };
     }
 
     private syncSettingControls() {

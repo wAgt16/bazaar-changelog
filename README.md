@@ -152,6 +152,12 @@ npm run preview     # assets/preview.html -> assets/preview.png (run npx playwri
 Build artifacts (`dist/`, `package.zip`, and the repository-root `index.js` / `index.css` / `i18n/`)
 are not committed.
 
+With debug mode on, running `bazaarChangelogRenderTest()` in the browser console opens the rendering
+test window: it takes a sample covering Markdown, GFM syntax and every kind of reference (`#123`,
+`owner/repo#123`, `@user`, bare URLs, `:tada:` …) through the dialog's real pipeline (kernel Lute →
+DOMPurify → reference linkification) so the layout and the links can be checked by eye. There is no
+entry for it in the settings panel, and the command stops working once debug mode is turned off.
+
 ## License
 
 [MIT](LICENSE)

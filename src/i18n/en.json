@@ -63,6 +63,7 @@
   "tokenNeedsSecureContext": "This context has no Web Crypto, so the token cannot be stored encrypted; use the desktop app or https.",
   "mobileDrawer": "Mobile bottom sheet",
   "mobileDrawerTip": "Show the changelog in SiYuan's native bottom sheet on mobile: flush with both screen edges, most of the screen by default, drag the handle at the top to change its height and swipe down to dismiss. The sheet has no close button. Off by default.",
+  "renderTest": "Rendering test cases",
   "debugMode": "Debug mode",
   "debugModeTip": "Print complete plugin logs to the console."
 }

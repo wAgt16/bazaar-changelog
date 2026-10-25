@@ -120,6 +120,11 @@ npm run preview     # assets/preview.html -> assets/preview.png（首次需 npx 
 
 构建产物（`dist/`、`package.zip`、仓库根的 `index.js` / `index.css` / `i18n/`）不入库。
 
+打开设置里的调试模式后，在开发者工具的控制台执行 `bazaarChangelogRenderTest()` 会打开渲染测试窗口：
+它把一份覆盖 Markdown、GFM 语法与各类引用写法（`#123`、`owner/repo#123`、`@user`、裸链接、`:tada:` 等）
+的样例按弹窗的真实链路渲染一遍（内核 Lute → DOMPurify → 引用链接化），用来肉眼核对排版与链接化。
+设置面板里没有这个入口，关掉调试模式后命令也随之失效。
+
 ## 许可证
 
 [MIT](LICENSE)
