@@ -95,7 +95,10 @@ export const fetchCommits = async (
     timeoutMs: number,
 ): Promise<TCommitsResult> => {
     const url = resolveGithubURL(buildURL(repo, range.base, range.head), settings, "commits");
-    const cached = cache.get(url);
+    // 缓存里存的是已经解析好的头像地址，所以「头像」那一项也得进键：只翻它时 URL 不变，
+    // 沿用旧键会让开关在 TTL 内看起来没生效
+    const cacheKey = `${url}|avatars:${usesAcceleration(settings, "avatars") ? "on" : "off"}`;
+    const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.time < CACHE_TTL) {
         debug(`commits: cache hit for ${repo}`, {
             count: cached.commits.length,
@@ -166,7 +169,7 @@ export const fetchCommits = async (
         if (commits.length === 0) {
             return {status: "empty"};
         }
-        cache.set(url, {time: Date.now(), commits, total});
+        cache.set(cacheKey, {time: Date.now(), commits, total});
         return {status: "ok", commits, total};
     } catch (error) {
         debug(`commits: ${repo} ${timedOut ? "timed out" : "failed"}`, {

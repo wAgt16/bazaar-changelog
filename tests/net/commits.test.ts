@@ -254,6 +254,20 @@ describe("fetchCommits 的请求头与缓存", () => {
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    it("只翻「头像」加速开关时不吃上一轮缓存", async () => {
+        const {fetchMock} = stubFetch(() => mockResponse(rawCommits));
+        // 提交记录的地址两项一样，差别只在头像那一项：缓存里存的是解析好的头像地址
+        const direct = settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.example/", avatars: false}),
+        });
+        const accelerated = settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.example/", avatars: true}),
+        });
+        await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, direct, 3000);
+        await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, accelerated, 3000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
     it("空结果不写缓存", async () => {
         const {fetchMock} = stubFetch(() => mockResponse([]));
         await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings(), 3000);
