@@ -51,7 +51,6 @@ const commits = () => [
         avatar: "",
     },
 ];
-
 type OpenChangelog = typeof import("../../src/dialog").openChangelog;
 let openChangelog: OpenChangelog;
 
@@ -490,6 +489,27 @@ describe("提交记录来源", () => {
         const meta = second.querySelector(".b3-list-item__meta") as HTMLElement;
         expect(meta.querySelector("img")).toBeNull();
         expect(meta.textContent).toBe("Alice · 2024-01-01");
+    });
+
+    it("提交信息里的 emoji 短代码渲染成表情", async () => {
+        mocks.fetchCommits.mockResolvedValue({
+            status: "ok",
+            total: 1,
+            commits: [{
+                sha: "d".repeat(40),
+                message: "chore: :tada: 发布 :rocket:\n\n正文里的 :fire: 也换",
+                author: "Dora",
+                date: "2024-03-03T10:00:00Z",
+                avatar: "",
+            }],
+        });
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("chore: 🎉 发布 🚀");
+
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        expect(row.querySelector(".b3-list-item__text")?.textContent).toBe("chore: 🎉 发布 🚀");
+        expect(row.querySelector(".bazaar-release-notes__commit-detail")?.textContent)
+            .toContain("正文里的 🔥 也换");
     });
 
     it("点一行展开完整提交信息，点里面的链接不展开", async () => {

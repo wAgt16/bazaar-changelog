@@ -24,7 +24,9 @@
 - **提交记录默认取「本机已安装版本 → 集市最新版本」**：可在弹窗里改起始与终止版本，起点选
   「不限」时列出该端点最近的提交。列表一行一条：最左是 7 位短哈希，右侧是提交者圆形头像、名字与
   日期（取不到头像时只显示名字），点哈希跳转到 GitHub 上的这条提交，点提交信息原地展开完整提交
-  说明（不列出改动了哪些文件）。发行说明与 CHANGELOG 都没有内容时，提示里也给「查看提交记录」的入口。
+  说明（不列出改动了哪些文件）。提交信息里的 `:tada:` 这类 emoji 短代码按 GitHub 的别名表渲染成
+  表情；发行说明与 CHANGELOG 由内核渲染，本来就会换。发行说明与 CHANGELOG 都没有内容时，提示里也给
+  「查看提交记录」的入口。
 - **自动生成的发行说明按「该版本没有发行说明」处理**：正文只有一行
   `Full Changelog: v1.0.1...v1.0.2` 链接时（多为自动生成），打开弹窗直接看这段范围对应的提交记录；
   手工写的说明只要多一行就不算。
@@ -111,6 +113,7 @@ npm install
 npm run typecheck   # 静态检查
 npm run build       # 产出 dist/ 与 package.zip
 npm run icon        # assets/icon.svg -> assets/icon.png
+node scripts/build-emoji-map.mjs                  # 重新生成 src/emoji-map.ts（gemoji 的别名表）
 node scripts/build-preview-css.mjs <思源仓库路径>   # 重生成 assets/preview.css
 npm run preview     # assets/preview.html -> assets/preview.png（首次需 npx playwright install chromium）
 ```

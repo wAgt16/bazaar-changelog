@@ -69,6 +69,11 @@
   旧版本存在顶层的 `githubAcceleration` / `githubAccelerationURL` 读到布尔值就迁移成新结构
   （当初打开过的人要的是「全部走加速」，分项因此给全开），迁移后旧字段不再写回。缓存键用最终地址：
   改地址或换开关后还命中上一轮结果的话，用户会以为开关没生效。
+- **emoji 短代码只在提交信息里自己换**：发行说明与 CHANGELOG 走内核的 Lute，它默认就认 `:tada:`
+  （`ParseOptions.Emoji` 开着、别名表是全套，实测 `:bug:` → 🐛）；只有插件自己拼的纯文本没这一步。
+  别名表整张打进包里（`src/emoji-map.ts`，由 `scripts/build-emoji-map.mjs` 从 gemoji 的
+  db/emoji.json 生成），因为浏览器里拿不到内核那份 Lute，而给 250 行提交逐条调 `/api/lute/md2html`
+  不现实。认不出的别名原样留着 —— GitHub 也这样，换成问号反而像被改过。
 - **弹窗里的代码块不做语法高亮**：思源是在内部调 `highlightRender()`，插件要用得自己加载内核
   `/stage/protyle` 下的 highlight.js 与代码主题，收益不值这份复杂度。
 - **提交记录用 compare 而不是自己过滤 `/commits`**：范围由用户选的两个版本决定，只有 compare 能直接

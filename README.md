@@ -29,9 +29,10 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   in the dialog; with the start set to "Any" the newest commits of that endpoint are listed. One commit
   per row: the 7-character short hash on the left, then the author's round avatar, name and date on the
   right (just the name when the avatar cannot be loaded). The hash opens the commit on GitHub, and
-  clicking the message expands the full commit
-  message in place (changed files are not listed). When neither release notes nor the CHANGELOG has
-  content, the hint also offers a "View commits" entry.
+  clicking the message expands the full commit message in place (changed files are not listed). Emoji
+  shortcodes such as `:tada:` in commit messages are rendered with GitHub's own alias table; release
+  notes and the CHANGELOG go through the kernel and are converted already. When neither release notes
+  nor the CHANGELOG has content, the hint also offers a "View commits" entry.
 - **Auto-generated release notes count as "no release notes"**: when the body is only a
   `Full Changelog: v1.0.1...v1.0.2` link (usually generated), the dialog opens the commit range it
   points to instead; a hand-written note with one more line is left alone.
@@ -143,6 +144,7 @@ npm install
 npm run typecheck   # static checks
 npm run build       # writes dist/ and package.zip
 npm run icon        # assets/icon.svg -> assets/icon.png
+node scripts/build-emoji-map.mjs   # regenerate src/emoji-map.ts (gemoji's alias table)
 node scripts/build-preview-css.mjs <path to the siyuan repository>   # regenerate assets/preview.css
 npm run preview     # assets/preview.html -> assets/preview.png (run npx playwright install chromium once)
 ```

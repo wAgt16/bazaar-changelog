@@ -3,6 +3,7 @@ import {fetchChangelog} from "./changelog";
 import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
 import {bindMobileDrawer} from "./drawer";
+import {emojiToUnicode} from "./emoji";
 import {escapeHTML} from "./escape";
 import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
 import {fetchReleases, parseFullChangelogOnly, parseGithubRepo, usesAcceleration} from "./github";
@@ -683,7 +684,10 @@ ${actionRow}`,
         first.className = "b3-list-item__first";
         const text = document.createElement("span");
         text.className = "b3-list-item__text";
-        text.textContent = commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage");
+        // 提交信息是我们自己拼的纯文本，`:tada:` 这类短代码得自己换；正文走内核的 Lute，不用管
+        text.textContent = emojiToUnicode(
+            commit.message.trim().split("\n")[0] || t(i18n, "commitNoMessage"),
+        );
         linkify(text);
         first.append(text);
         row.append(first);
@@ -699,7 +703,7 @@ ${actionRow}`,
         row.append(meta);
         const detail = document.createElement("div");
         detail.className = `${CLASS}__commit-detail fn__none`;
-        detail.textContent = commit.message.trim() || t(i18n, "commitNoMessage");
+        detail.textContent = emojiToUnicode(commit.message.trim() || t(i18n, "commitNoMessage"));
         linkify(detail);
         if (metaText || metaAvatar) {
             // 窄屏的行内放不下作者与时间，挪到展开的提交信息末尾（宽屏时这一行由 CSS 隐藏）
