@@ -84,6 +84,31 @@ describe("bindMobileDrawer", () => {
         expect(sheet.style.transition).toBe("");
     });
 
+    it("弹窗建好时已经带着打开类就直接露出，不报错", () => {
+        const dialog = document.createElement("div");
+        dialog.className = "b3-dialog b3-dialog--open";
+        dialog.innerHTML = `<div class="b3-dialog__container"></div>`;
+        document.body.append(dialog);
+        const sheet = dialog.querySelector(".b3-dialog__container") as HTMLElement;
+
+        // 这条同步路径会立刻走到 reveal()：状态变量必须已经初始化好
+        expect(() => bindMobileDrawer({dialog, sheet, close: vi.fn()})).not.toThrow();
+        expect(sheet.style.visibility).toBe("");
+        expect(sheet.style.transform).toBe("");
+    });
+
+    it("视口变矮时把高度重新夹回新视口内", async () => {
+        const {sheet} = await setup();
+        expect(sheet.style.height).toBe(`${DEFAULT_HEIGHT}px`);
+
+        const original = window.innerHeight;
+        window.innerHeight = 400;
+        window.dispatchEvent(new Event("resize"));
+        // 400 * 0.92 = 368，比原来的 538 小，得跟着降
+        expect(sheet.style.height).toBe("368px");
+        window.innerHeight = original;
+    });
+
     it("拖抓手往上变高、往下变矮，松手不收起", async () => {
         const {sheet, close, handle} = await setup();
 

@@ -62,7 +62,13 @@ export const bindMobileDrawer = (options: IMobileDrawerOptions): (() => void) =>
     sheet.style.transition = "none";
     sheet.style.transform = "translateY(100%)";
     sheet.style.visibility = "hidden";
+    // 状态先声明：下面的同步 branch（弹窗建好时已经带着打开类）会立刻走到 reveal()，用到 closing
     let opened = false;
+    let start: {y: number, height: number, fromHandle: boolean, time: number} | undefined;
+    let dragging = false;
+    let closing = false;
+    /** 刚拖完的那一下不该当成点击，否则手一松就顺手展开了某一行提交。 */
+    let suppressClickUntil = 0;
     const reveal = () => {
         if (opened || closing) {
             return;
@@ -85,11 +91,17 @@ export const bindMobileDrawer = (options: IMobileDrawerOptions): (() => void) =>
         reveal();
     }
 
-    let start: {y: number, height: number, fromHandle: boolean, time: number} | undefined;
-    let dragging = false;
-    let closing = false;
-    /** 刚拖完的那一下不该当成点击，否则手一松就顺手展开了某一行提交。 */
-    let suppressClickUntil = 0;
+    // 视口变了就按新高度重新夹一次：转屏、软键盘、浏览器工具栏收起都会改 innerHeight，
+    // 而原生那条 60vh 的兜底被我们覆盖掉了，不重新算就会出现比视口还高的抽屉
+    const onViewportChange = () => {
+        if (start) {
+            return;
+        }
+        applyHeight(height);
+    };
+    window.addEventListener("resize", onViewportChange);
+    window.visualViewport?.addEventListener("resize", onViewportChange);
+
 
     const reset = () => {
         // 还没弹出来时保留屏幕外的定位，别把初始状态清掉
@@ -203,6 +215,8 @@ export const bindMobileDrawer = (options: IMobileDrawerOptions): (() => void) =>
     debug("drawer: attached", {height, min: minHeight(), max: maxHeight()});
     return () => {
         observer.disconnect();
+        window.removeEventListener("resize", onViewportChange);
+        window.visualViewport?.removeEventListener("resize", onViewportChange);
         sheet.removeEventListener("touchstart", onStart);
         sheet.removeEventListener("touchmove", onMove);
         sheet.removeEventListener("touchend", onEnd);
