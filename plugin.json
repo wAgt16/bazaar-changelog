@@ -3,7 +3,7 @@
   "author": "wmy2981",
   "url": "https://github.com/wmy2981/bazaar-changelog",
   "version": "1.2.0",
-  "minAppVersion": "3.7.0",
+  "minAppVersion": "3.8.4",
   "backends": [
     "all"
   ],
