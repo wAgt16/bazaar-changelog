@@ -25,6 +25,8 @@ node scripts/build-preview-css.mjs <思源仓库路径>   # 重新生成 assets/
 
 - 改动要有测试兜底：`npm run test:coverage` 的门槛是 90 / 85 / 95 / 90，掉下来就补测试，不调门槛。
 - 一个 issue 一个提交，提交信息里引用它；提交信息用 `type(scope): lowercase` 的英文祈使句。
+- 破坏性改动写成 `type(scope)!: …`，并在正文里补一段 `BREAKING CHANGE:` 说明影响面 —— 两种写法
+  都认，发行说明会把它们单独列进 💥 Breaking Changes（见 `scripts/release-notes.mjs`）。
 - 只在发版时动版本号：`plugin.json`、`package.json`、`package-lock.json` 的根版本一起改，单独一个
   `chore(release): x.y.z` 提交。
 
