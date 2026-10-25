@@ -1,4 +1,4 @@
-import {resolveGithubURL} from "./github";
+import {resolveGithubURL, usesAcceleration} from "./github";
 import type {TFailureReason} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
@@ -80,7 +80,7 @@ export const fetchCommits = async (
     settings: ISettings,
     timeoutMs: number,
 ): Promise<TCommitsResult> => {
-    const url = resolveGithubURL(buildURL(repo, range.base, range.head), settings);
+    const url = resolveGithubURL(buildURL(repo, range.base, range.head), settings, "commits");
     const cached = cache.get(url);
     if (cached && Date.now() - cached.time < CACHE_TTL) {
         debug(`commits: cache hit for ${repo}`, {
@@ -92,7 +92,7 @@ export const fetchCommits = async (
     debug(`commits: GET ${url}`, {
         base: range.base || "(none)",
         head: range.head || "(none)",
-        acceleration: settings.githubAcceleration,
+        acceleration: usesAcceleration(settings, "commits"),
         authorized: willAuthorize(url),
         timeoutMs,
     });

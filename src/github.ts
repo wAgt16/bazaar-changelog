@@ -1,5 +1,5 @@
 import {debug} from "./logger";
-import type {ISettings} from "./settings";
+import type {ISettings, TGithubRequest} from "./settings";
 import {githubAPIHeaders, willAuthorize} from "./token";
 
 export interface IRelease {
@@ -89,13 +89,24 @@ export type TFailureReason =
     /** 回了 200，但正文不是预期的 JSON。 */
     | {kind: "payload"};
 
-/** 开启加速且地址合法时，把原始地址挂到加速前缀后面；否则原样返回。 */
-export const resolveGithubURL = (url: string, settings: ISettings): string => {
-    if (!settings.githubAcceleration) {
+/**
+ * 这一类请求这次是否已经走了加速地址：总开关开着、分项开关开着，且地址是合法的 http(s) 前缀。
+ * 弹窗据此决定要不要把「可能是加速服务不支持的接口」写进提示里。
+ */
+export const usesAcceleration = (settings: ISettings, request: TGithubRequest): boolean => {
+    const acceleration = settings.githubAcceleration;
+    return acceleration.enabled && acceleration[request] && normalizeAccelerationURL(acceleration.url) !== "";
+};
+
+/**
+ * 这一类请求的最终地址：开了加速且地址合法时挂到前缀后面，否则原样返回。
+ * 分项开关落在调用方指名的那一类上，关掉的一项照旧直连。
+ */
+export const resolveGithubURL = (url: string, settings: ISettings, request: TGithubRequest): string => {
+    if (!usesAcceleration(settings, request)) {
         return url;
     }
-    const prefix = normalizeAccelerationURL(settings.githubAccelerationURL);
-    return prefix ? prefix + url : url;
+    return normalizeAccelerationURL(settings.githubAcceleration.url) + url;
 };
 
 interface IGithubRelease {
@@ -120,8 +131,9 @@ export type TReleasesResult =
  * 超时与普通失败分开返回：超时由弹窗给「重新获取」，其余仍按原来的回退处理。
  */
 export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs: number): Promise<TReleasesResult> => {
-    const key = `${repo}|${settings.githubAcceleration ? normalizeAccelerationURL(settings.githubAccelerationURL) : ""}`;
-    const cached = cache.get(key);
+    const url = resolveGithubURL(`${RELEASES_API}/repos/${repo}/releases?per_page=100`, settings, "releaseNotes");
+    // 缓存跟着最终地址走：换加速地址、开关某一项之后不该再命中上一轮的结果
+    const cached = cache.get(url);
     if (cached && Date.now() - cached.time < CACHE_TTL) {
         debug(`release notes: cache hit for ${repo}`, {
             count: cached.releases.length,
@@ -129,10 +141,9 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
         });
         return {status: "ok", releases: cached.releases};
     }
-    const url = resolveGithubURL(`${RELEASES_API}/repos/${repo}/releases?per_page=100`, settings);
     debug(`release notes: GET ${url}`, {
-        acceleration: settings.githubAcceleration,
-        accelerationURL: settings.githubAccelerationURL,
+        acceleration: usesAcceleration(settings, "releaseNotes"),
+        accelerationURL: settings.githubAcceleration.url,
         authorized: willAuthorize(url),
         timeoutMs,
     });
@@ -178,7 +189,7 @@ export const fetchReleases = async (repo: string, settings: ISettings, timeoutMs
             }))
             // published_at 是 ISO 8601，字典序就是时间序
             .sort((a, b) => a.publishedAt < b.publishedAt ? 1 : a.publishedAt > b.publishedAt ? -1 : 0);
-        cache.set(key, {time: Date.now(), releases});
+        cache.set(url, {time: Date.now(), releases});
         debug(`release notes: ${repo} kept ${releases.length} of ${payload.length}`, {
             elapsed: Date.now() - started,
             rateLimitRemaining: response.headers.get("x-ratelimit-remaining"),

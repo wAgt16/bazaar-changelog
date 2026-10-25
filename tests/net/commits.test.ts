@@ -1,15 +1,12 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {abortable, mockResponse, stubFetch} from "../helpers/network";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 
 type CommitsModule = typeof import("../../src/commits");
 type TokenModule = typeof import("../../src/token");
 
 let commits: CommitsModule;
 let token: TokenModule;
-
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
 
 const API = "https://api.github.com/repos/owner/repo";
 
@@ -72,8 +69,7 @@ describe("fetchCommits 的地址", () => {
     it("开了加速时改走加速地址", async () => {
         const {calls} = stubFetch(() => mockResponse([]));
         await commits.fetchCommits("owner/repo", {base: "a", head: "b"}, settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
         }), 3000);
         expect(calls[0].url).toBe(`https://gh-proxy.com/${API}/compare/a...b`);
     });

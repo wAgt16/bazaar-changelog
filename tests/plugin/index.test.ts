@@ -1,7 +1,7 @@
 import {webcrypto} from "node:crypto";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import zhCN from "../../src/i18n/zh-CN.json";
-import {DEFAULT_SETTINGS} from "../../src/settings";
+import {DEFAULT_ACCELERATION, DEFAULT_SETTINGS} from "../../src/settings";
 import {flush} from "../helpers/network";
 import {stubState} from "../stubs/siyuan";
 
@@ -82,15 +82,14 @@ describe("onload", () => {
             "识别空发行说明",
             "链接化引用",
             "GitHub 加速",
-            "加速地址",
             "GitHub 令牌",
             "调试模式",
         ]);
         expect(byTitle(plugin, "优先加载").value).toBe("releaseNotes");
         expect(byTitle(plugin, "识别空发行说明").checked).toBe(true);
         expect(byTitle(plugin, "链接化引用").checked).toBe(true);
-        expect(byTitle(plugin, "GitHub 加速").checked).toBe(false);
-        expect(byTitle(plugin, "加速地址").value).toBe("");
+        // 加速改成独立窗口：设置页里只有入口按钮
+        expect(byTitle(plugin, "GitHub 加速").textContent).toBe("配置");
         expect(byTitle(plugin, "调试模式").checked).toBe(false);
     });
 
@@ -107,10 +106,14 @@ describe("onload", () => {
         await plugin.onload();
 
         expect(byTitle(plugin, "优先加载").value).toBe("commits");
-        expect(byTitle(plugin, "GitHub 加速").checked).toBe(true);
-        expect(byTitle(plugin, "加速地址").value).toBe("https://gh-proxy.com");
         expect(byTitle(plugin, "识别空发行说明").checked).toBe(false);
         expect(byTitle(plugin, "调试模式").checked).toBe(true);
+        // 旧的顶层开关与地址迁移成新结构，分项默认全开
+        expect((plugin as any).settings.githubAcceleration).toEqual({
+            ...DEFAULT_ACCELERATION,
+            enabled: true,
+            url: "https://gh-proxy.com",
+        });
     });
 
     it("挂上集市详情页与更新按钮的监听", async () => {
@@ -161,13 +164,10 @@ describe("onload", () => {
     it("文本框先标成 readonly，等本轮任务结束再放开", async () => {
         const plugin = await createPlugin();
         await plugin.onload();
-        const url = byTitle(plugin, "加速地址");
         const token = byTitle(plugin, "GitHub 令牌");
-        expect(url.getAttribute("readonly")).toBe("readonly");
         expect(token.getAttribute("readonly")).toBe("readonly");
 
         await flush();
-        expect(url.hasAttribute("readonly")).toBe(false);
         expect(token.hasAttribute("readonly")).toBe(false);
     });
 });
@@ -178,8 +178,6 @@ describe("保存设置", () => {
         await plugin.onload();
 
         byTitle(plugin, "优先加载").value = "changelog";
-        byTitle(plugin, "GitHub 加速").checked = true;
-        byTitle(plugin, "加速地址").value = "https://gh-proxy.com/";
         byTitle(plugin, "识别空发行说明").checked = false;
         byTitle(plugin, "链接化引用").checked = false;
         byTitle(plugin, "调试模式").checked = true;
@@ -187,14 +185,12 @@ describe("保存设置", () => {
 
         expect(await stored(plugin, "settings")).toEqual({
             preferredSource: "changelog",
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: {...DEFAULT_ACCELERATION},
             botReleaseNotesAsEmpty: false,
             githubReferences: false,
             debug: true,
         });
         expect(byTitle(plugin, "优先加载").value).toBe("changelog");
-        expect(byTitle(plugin, "GitHub 加速").checked).toBe(true);
     });
 
     it("写盘失败时提示并且不按新值行事", async () => {
@@ -218,6 +214,103 @@ describe("保存设置", () => {
 
         await confirm(plugin);
         expect(stubState.messages).toContain("[bazaar-changelog] Error: boom");
+    });
+});
+
+describe("GitHub 加速配置", () => {
+    const accelerationControl = <T extends HTMLInputElement>(type: string) =>
+        document.querySelector(`.bazaar-acceleration [data-type="${type}"]`) as T;
+    const openWindow = async (plugin: PluginInstance) => {
+        byTitle(plugin, "GitHub 加速").click();
+        await flush();
+    };
+    const click = (selector: string) => (document.querySelector(selector) as HTMLElement).click();
+
+    it("入口按钮打开独立窗口，并带出当前配置", async () => {
+        const plugin = await createPlugin();
+        await plugin.saveData("settings", {
+            githubAcceleration: {enabled: true, url: "https://gh-proxy.com/", changelog: false},
+        });
+        await plugin.onload();
+        await openWindow(plugin);
+
+        expect(accelerationControl("enabled").checked).toBe(true);
+        expect(accelerationControl("url").value).toBe("https://gh-proxy.com/");
+        expect(accelerationControl("changelog").checked).toBe(false);
+        expect(accelerationControl("avatars").checked).toBe(true);
+    });
+
+    it("分项开关收在一组里，与总开关、加速地址分开", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        await openWindow(plugin);
+
+        const group = document.querySelector(".bazaar-acceleration__items") as HTMLElement;
+        expect(group).not.toBeNull();
+        expect(Array.from(group.querySelectorAll("input[data-type]")).map((input) => input.getAttribute("data-type")))
+            .toEqual(["releaseNotes", "changelog", "commits", "avatars"]);
+        // 总开关与地址留在这组外面，视觉上是上一层
+        expect(group.querySelector('[data-type="enabled"]')).toBeNull();
+        expect(group.querySelector('[data-type="url"]')).toBeNull();
+    });
+
+    it("保存后落盘并关窗，地址去掉首尾空白", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        await openWindow(plugin);
+        accelerationControl("enabled").checked = true;
+        accelerationControl("url").value = " https://gh-proxy.com ";
+        accelerationControl("commits").checked = false;
+        click('.b3-dialog [data-type="save"]');
+        await flush(6);
+
+        expect((await stored(plugin, "settings"))?.githubAcceleration).toEqual({
+            ...DEFAULT_ACCELERATION,
+            enabled: true,
+            url: "https://gh-proxy.com",
+            commits: false,
+        });
+        expect(document.querySelector(".bazaar-acceleration")).toBeNull();
+    });
+
+    it("取消不落盘", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        await openWindow(plugin);
+        accelerationControl("enabled").checked = true;
+        click('.b3-dialog [data-type="close"]');
+        await flush();
+
+        expect(await stored(plugin, "settings")).toBeUndefined();
+        expect(document.querySelector(".bazaar-acceleration")).toBeNull();
+    });
+
+    it("地址不是 http(s) 前缀时当场提示", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        await openWindow(plugin);
+        const url = accelerationControl("url");
+        url.value = "gh-proxy.com";
+        url.dispatchEvent(new Event("input"));
+
+        const hint = document.querySelector('.bazaar-acceleration [data-type="invalid"]') as HTMLElement;
+        expect(hint.classList.contains("fn__none")).toBe(false);
+
+        url.value = "https://gh-proxy.com";
+        url.dispatchEvent(new Event("input"));
+        expect(hint.classList.contains("fn__none")).toBe(true);
+    });
+
+    it("写盘失败时窗口留着，提示写盘原因", async () => {
+        const plugin = await createPlugin();
+        await plugin.onload();
+        await openWindow(plugin);
+        vi.spyOn(plugin, "saveData").mockResolvedValue({code: 500, msg: "disk full"});
+        click('.b3-dialog [data-type="save"]');
+        await flush(6);
+
+        expect(stubState.messages).toContain("[bazaar-changelog] disk full");
+        expect(document.querySelector(".bazaar-acceleration")).not.toBeNull();
     });
 });
 

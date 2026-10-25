@@ -1,4 +1,4 @@
-import {resolveGithubURL} from "./github";
+import {resolveGithubURL, usesAcceleration} from "./github";
 import type {TFailureReason} from "./github";
 import {debug} from "./logger";
 import type {ISettings} from "./settings";
@@ -56,12 +56,12 @@ export const fetchChangelog = async (repo: string, settings: ISettings, timeoutM
         debug(`CHANGELOG: cache hit for ${repo}`, {bytes: cached.markdown.length, path: cached.path});
         return {status: "ok", markdown: cached.markdown, path: cached.path};
     }
-    const urls = PATHS.map((filePath) => resolveGithubURL(`${RAW}/${repo}/HEAD/${filePath}`, settings));
+    const urls = PATHS.map((filePath) => resolveGithubURL(`${RAW}/${repo}/HEAD/${filePath}`, settings, "changelog"));
     debug(`CHANGELOG: ${repo} tried in parallel`, {
         urls,
         timeoutMs,
         confirmTimeout: CONFIRM_TIMEOUT,
-        acceleration: settings.githubAcceleration,
+        acceleration: usesAcceleration(settings, "changelog"),
     });
     const started = Date.now();
     const controller = new AbortController();

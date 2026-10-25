@@ -1,4 +1,5 @@
 import {Plugin, Setting, showMessage} from "siyuan";
+import {openAccelerationDialog} from "./acceleration";
 import {observeBazaarReadme} from "./bazaarDom";
 import type {TI18n} from "./i18n";
 import {t} from "./i18n";
@@ -6,7 +7,7 @@ import "./index.scss";
 import {debug, setDebugEnabled, warn} from "./logger";
 import {createSecretKey, decryptSecret, encryptSecret, exportSecretKey, importSecretKey} from "./secret";
 import {DEFAULT_SETTINGS, mergeSettings} from "./settings";
-import type {ISettings} from "./settings";
+import type {IGithubAcceleration, ISettings} from "./settings";
 import {hasGithubToken, setGithubToken} from "./token";
 import {interceptBazaarUpdate} from "./update";
 
@@ -19,8 +20,6 @@ export default class ReleaseNotePlugin extends Plugin {
     private settings: ISettings = {...DEFAULT_SETTINGS};
     private readonly disposers: Array<() => void> = [];
     private sourceElement: HTMLSelectElement | undefined;
-    private accelerationElement: HTMLInputElement | undefined;
-    private accelerationURLElement: HTMLInputElement | undefined;
     private botReleaseNotesElement: HTMLInputElement | undefined;
     private referencesElement: HTMLInputElement | undefined;
     private tokenElement: HTMLInputElement | undefined;
@@ -79,25 +78,11 @@ export default class ReleaseNotePlugin extends Plugin {
             title: t(this.texts(), "githubAcceleration"),
             description: t(this.texts(), "githubAccelerationTip"),
             createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "checkbox";
-                element.className = "b3-switch";
-                element.checked = this.settings.githubAcceleration;
-                this.accelerationElement = element;
-                return element;
-            },
-        });
-        this.setting.addItem({
-            title: t(this.texts(), "githubAccelerationURL"),
-            description: t(this.texts(), "githubAccelerationURLTip"),
-            createActionElement: () => {
-                const element = document.createElement("input");
-                element.type = "text";
-                element.className = "b3-text-field fn__block";
-                element.placeholder = "https://gh-proxy.com/";
-                element.value = this.settings.githubAccelerationURL;
-                this.suppressOpenKeyboard(element);
-                this.accelerationURLElement = element;
+                const element = document.createElement("button");
+                element.type = "button";
+                element.className = "b3-button b3-button--outline";
+                element.textContent = t(this.texts(), "githubAccelerationConfigure");
+                element.addEventListener("click", () => this.openAcceleration());
                 return element;
             },
         });
@@ -200,8 +185,7 @@ export default class ReleaseNotePlugin extends Plugin {
     private async saveSettings() {
         const next = mergeSettings({
             preferredSource: this.sourceElement?.value,
-            githubAcceleration: this.accelerationElement?.checked,
-            githubAccelerationURL: this.accelerationURLElement?.value,
+            githubAcceleration: this.settings.githubAcceleration,
             botReleaseNotesAsEmpty: this.botReleaseNotesElement?.checked,
             githubReferences: this.referencesElement?.checked,
             debug: this.debugElement?.checked,
@@ -309,15 +293,22 @@ export default class ReleaseNotePlugin extends Plugin {
         return true;
     }
 
+    /** 「GitHub 加速」的独立配置窗口：总开关、地址与分项开关都在里面改。 */
+    private openAcceleration() {
+        openAccelerationDialog({
+            i18n: this.texts(),
+            value: this.settings.githubAcceleration,
+            onSave: (value) => this.saveAcceleration(value),
+        });
+    }
+
+    private async saveAcceleration(value: IGithubAcceleration): Promise<boolean> {
+        return this.persistSettings(mergeSettings({...this.settings, githubAcceleration: value}));
+    }
+
     private syncSettingControls() {
         if (this.sourceElement) {
             this.sourceElement.value = this.settings.preferredSource;
-        }
-        if (this.accelerationElement) {
-            this.accelerationElement.checked = this.settings.githubAcceleration;
-        }
-        if (this.accelerationURLElement) {
-            this.accelerationURLElement.value = this.settings.githubAccelerationURL;
         }
         if (this.botReleaseNotesElement) {
             this.botReleaseNotesElement.checked = this.settings.botReleaseNotesAsEmpty;

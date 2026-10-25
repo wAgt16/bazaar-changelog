@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import zhCN from "../../src/i18n/zh-CN.json";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 import {stubState} from "../stubs/siyuan";
 
 /**
@@ -28,8 +27,6 @@ vi.mock("../../src/commits", async (importOriginal) => {
 });
 
 const REPO_URL = "https://github.com/owner/repo";
-
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
 
 const releases = () => [
     {tag: "v1.2.3", publishedAt: "2024-03-01T00:00:00Z", markdown: "## 修复\n\n- 修了 #12"},
@@ -375,16 +372,34 @@ describe("提交记录来源", () => {
 
     it("开了加速时把原因并进那句话、任何状态码都算", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 404}});
-        open({settings: settings({preferredSource: "commits", githubAcceleration: true})});
+        open({
+            settings: settings({
+                preferredSource: "commits",
+                githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
+            }),
+        });
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
             .toBe("GitHub 加速服务可能不支持获取选定版本范围的提交（GitHub 返回 404）");
         expect(control("action").textContent).toBe("查看不限到 HEAD 的提交");
     });
 
+    it("只开了别的分项时不给这句，提交记录本来就是直连的", async () => {
+        mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 404}});
+        open({
+            settings: settings({
+                preferredSource: "commits",
+                githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", commits: false}),
+            }),
+        });
+        await expectBody("无法获取提交记录");
+        expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
+            .toBe("GitHub 返回 404");
+    });
+
     it("没开加速时只给原因，不甩锅给加速", async () => {
         mocks.fetchCommits.mockResolvedValue({status: "error", reason: {kind: "http", status: 403}});
-        open({settings: settings({preferredSource: "commits", githubAcceleration: false})});
+        open({settings: settings({preferredSource: "commits"})});
         await expectBody("无法获取提交记录");
         expect(requiredDialog().querySelector(".bazaar-release-notes__hint")?.textContent)
             .toBe("请求被拒绝（403），可能是限流");

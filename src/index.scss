@@ -190,6 +190,49 @@
   }
 }
 
+// 「GitHub 加速」的独立窗口：一行一项，左边名字右边控件；分项开关只有名字，不带说明。
+.bazaar-acceleration {
+  &__row {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    justify-content: space-between;
+    min-height: 36px;
+  }
+
+  &__label {
+    flex: 0 0 auto;
+  }
+
+  // 地址输入框吃掉名字之外的宽度；窄屏上也不会把右边顶出容器
+  &__url {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &__hint {
+    color: var(--b3-theme-error);
+    font-size: var(--b3-font-size);
+    margin-top: -4px;
+  }
+
+  // 分项开关：从属于总开关，靠缩进、次要色与更紧的行距和上面两项分开
+  &__items {
+    border-left: 2px solid var(--b3-theme-surface-lighter);
+    margin: 4px 0 0 8px;
+    padding-left: 16px;
+
+    .bazaar-acceleration__row {
+      min-height: 32px;
+    }
+
+    .bazaar-acceleration__label {
+      color: var(--b3-theme-on-surface);
+      font-size: var(--b3-font-size);
+    }
+  }
+}
+
 // 集市包详情页「集市信息 - 版本」的值：与同页资源链接同色，做成可点开的按钮。
 .item__version-link {
   background-color: transparent;

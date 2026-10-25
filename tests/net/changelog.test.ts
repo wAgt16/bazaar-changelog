@@ -1,13 +1,10 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {abortable, deferred, mockResponse, stubFetch} from "../helpers/network";
-import {DEFAULT_SETTINGS} from "../../src/settings";
-import type {ISettings} from "../../src/settings";
+import {acceleration, settings} from "../helpers/settings";
 
 type ChangelogModule = typeof import("../../src/changelog");
 
 let changelog: ChangelogModule;
-
-const settings = (overrides: Partial<ISettings> = {}): ISettings => ({...DEFAULT_SETTINGS, ...overrides});
 
 const CHANGELOG_URL = "https://raw.githubusercontent.com/owner/repo/HEAD/CHANGELOG.md";
 const DOCS_URL = "https://raw.githubusercontent.com/owner/repo/HEAD/docs/CHANGELOG.md";
@@ -84,14 +81,21 @@ describe("fetchChangelog", () => {
     it("开了加速时三个地址都改走前缀", async () => {
         const {calls} = stubFetch(() => mockResponse(undefined, {status: 404}));
         await changelog.fetchChangelog("owner/repo", settings({
-            githubAcceleration: true,
-            githubAccelerationURL: "https://gh-proxy.com/",
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/"}),
         }), 3000);
         expect(calls.map((call) => call.url).sort()).toEqual([
             `https://gh-proxy.com/${CHANGELOG_URL}`,
             `https://gh-proxy.com/${DOC_URL}`,
             `https://gh-proxy.com/${DOCS_URL}`,
         ].sort());
+    });
+
+    it("CHANGELOG 的分项关掉时直连", async () => {
+        const {calls} = stubFetch(() => mockResponse(undefined, {status: 404}));
+        await changelog.fetchChangelog("owner/repo", settings({
+            githubAcceleration: acceleration({enabled: true, url: "https://gh-proxy.com/", changelog: false}),
+        }), 3000);
+        expect(calls.map((call) => call.url).sort()).toEqual([CHANGELOG_URL, DOC_URL, DOCS_URL].sort());
     });
 
     it("命中后取消其余请求", async () => {

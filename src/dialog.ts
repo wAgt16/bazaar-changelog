@@ -4,7 +4,7 @@ import {commitURL, fetchCommits, shortSha} from "./commits";
 import type {ICommit} from "./commits";
 import {escapeHTML} from "./escape";
 import {blobURL, classifyGitHubLink, commitsURL, compareWebURL, releaseURL, repoWebURL} from "./githublinks";
-import {fetchReleases, parseFullChangelogOnly, parseGithubRepo} from "./github";
+import {fetchReleases, parseFullChangelogOnly, parseGithubRepo, usesAcceleration} from "./github";
 import type {IRelease, TFailureReason} from "./github";
 import {t} from "./i18n";
 import type {TI18n} from "./i18n";
@@ -586,14 +586,14 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
             // 开了加速时不管对方回什么状态码都可能是反代不代理 compare 接口，所以不看状态码；
             // 直连失败多半是限流或网络，那句话会把人带偏，因此不加
             const reason = reasonText(result.reason);
-            const hint = options.settings.githubAcceleration ?
-                t(i18n, "commitsAccelerationUnsupported", {reason}) : reason;
+            const accelerated = usesAcceleration(options.settings, "commits");
+            const hint = accelerated ? t(i18n, "commitsAccelerationUnsupported", {reason}) : reason;
             // compare 取不到时列表接口往往还能用：「不限 → HEAD」走的就是 /commits
             const offered = range.base !== "" || range.head !== "HEAD";
             debug("commits: failed", {
                 range,
                 reason: result.reason,
-                acceleration: options.settings.githubAcceleration,
+                acceleration: accelerated,
                 fallback: offered,
             });
             if (!offered) {

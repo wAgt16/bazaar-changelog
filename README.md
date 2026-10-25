@@ -46,9 +46,11 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   commits alike. Ctrl/⌘-click still hands the link to the browser.
 - **Optional GitHub token**: set a personal access token to use your own quota for release notes and
   commits instead of the anonymous ~60 requests per hour; the token is only sent to `api.github.com`.
-- **GitHub acceleration switch**: off by default, so `api.github.com` and
-  `raw.githubusercontent.com` are requested directly. Turn it on and fill in one acceleration URL
-  when you need it; release notes, CHANGELOG and commit requests then all go through it.
+- **GitHub acceleration is configured per source**: off by default, so `api.github.com` and
+  `raw.githubusercontent.com` are requested directly. Click "Configure" on the plugin settings page to
+  fill in one acceleration URL in a separate window and choose which requests go through it (release
+  notes, the CHANGELOG and commits each have their own switch); the master switch turns it off for all
+  of them at once.
 
 ## Settings
 
@@ -57,8 +59,7 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
 | Preferred source | Release notes | Which source the changelog dialog opens with (release notes / CHANGELOG / commits). |
 | Skip empty release notes | On | Release notes whose only line is a `Full Changelog: v1.0.1...v1.0.2` link count as no release notes, and the dialog opens that commit range instead. |
 | Link references | On | Render `#123`, `owner/repo#123` and `@user` as links to GitHub. |
-| GitHub acceleration | Off | When off, release notes and commits reach `api.github.com` and the CHANGELOG reaches `raw.githubusercontent.com` directly. |
-| Acceleration URL | Empty | A prefix proxy such as `https://gh-proxy.com/` . With acceleration on and an http(s) URL set, release notes, CHANGELOG and commit requests are prepended with it. |
+| GitHub acceleration | Off | Click "Configure" to set, in a separate window, the master switch, the acceleration URL (a prefix proxy such as `https://gh-proxy.com/`) and whether release notes, the CHANGELOG and commits each go through it. |
 | GitHub token | Empty | A personal access token (PAT) for a higher `api.github.com` quota. Stored encrypted in the plugin's private storage (the key in a separate file) and only sent to `api.github.com`; with acceleration on, requests are relayed by a third-party proxy and carry no token. |
 | Debug mode | Off | Print complete plugin logs to the console (request URLs, timings, version filtering, fallback reasons), prefixed with `[bazaar-changelog]`. |
 
@@ -112,7 +113,7 @@ a native "Changelog" dialog, and uses the same dialog to confirm bazaar package 
   plugin logs a console warning, stops replacing the update button, and does not implement an update
   path of its own.
 - Code blocks in the dialog are rendered as plain text, without syntax highlighting.
-- GitHub acceleration affects release notes, the CHANGELOG and commits; with it off they reach
+- Acceleration applies per item: with only one source accelerated, the others still reach
   `api.github.com` and `raw.githubusercontent.com` directly, and both domains can be unreachable in
   mainland China.
 - The CHANGELOG has this single entry point and no second CDN to fall back on: when it is unreachable
