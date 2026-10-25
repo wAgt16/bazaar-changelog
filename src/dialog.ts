@@ -644,14 +644,19 @@ const openChangelogDialog = (options: IChangelogDialogOptions, repo: string) => 
         const row = document.createElement("div");
         row.className = "b3-list-item";
         row.setAttribute("data-type", "commit");
+        // 哈希列：列本身负责对齐与留白，链接只包住哈希那几个字。
+        // 以前把列宽直接写在 <a> 上，哈希右边那一截空白也算链接，点中间的空白会跳走。
+        const hashCell = document.createElement("span");
+        hashCell.className = `${CLASS}__hash`;
         const hash = document.createElement("a");
-        hash.className = `${CLASS}__hash`;
+        hash.className = `${CLASS}__hash-link`;
         hash.setAttribute("data-type", "commit-link");
         hash.href = commitURL(repo, commit.sha);
         hash.target = "_blank";
         hash.rel = "noopener noreferrer";
         hash.textContent = shortSha(commit.sha);
-        row.append(hash);
+        hashCell.append(hash);
+        row.append(hashCell);
         const first = document.createElement("div");
         first.className = "b3-list-item__first";
         const text = document.createElement("span");

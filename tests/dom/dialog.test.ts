@@ -422,11 +422,27 @@ describe("提交记录来源", () => {
         const rows = requiredDialog().querySelectorAll(".bazaar-release-notes__commit");
         expect(rows).toHaveLength(2);
         const first = rows[0];
-        expect(first.querySelector(".bazaar-release-notes__hash")?.textContent).toBe("bbbbbbb");
-        expect(first.querySelector(".bazaar-release-notes__hash")?.getAttribute("href"))
+        expect(first.querySelector(".bazaar-release-notes__hash-link")?.textContent).toBe("bbbbbbb");
+        expect(first.querySelector(".bazaar-release-notes__hash-link")?.getAttribute("href"))
             .toBe("https://github.com/owner/repo/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
         expect(first.querySelector(".b3-list-item__text")?.textContent).toBe("fix: second");
         expect(first.querySelector(".b3-list-item__meta")?.textContent).toBe("Bob · 2024-02-02");
+    });
+
+    it("链接只包住哈希本身，点哈希列右边的空白只展开不跳转", async () => {
+        open({settings: settings({preferredSource: "commits"})});
+        await expectBody("列出 2 条提交");
+        const row = requiredDialog().querySelector(".bazaar-release-notes__commit") as HTMLElement;
+        const detail = row.querySelector(".bazaar-release-notes__commit-detail") as HTMLElement;
+
+        // 哈希列自己占位，链接是它的子元素：列里哈希之外的空白不属于链接
+        const cell = row.querySelector(".bazaar-release-notes__hash") as HTMLElement;
+        expect(cell.tagName).toBe("SPAN");
+        expect(cell.querySelector("a.bazaar-release-notes__hash-link")).not.toBeNull();
+        expect(cell.getAttribute("href")).toBeNull();
+
+        click(cell);
+        expect(detail.classList.contains("fn__none")).toBe(false);
     });
 
     it("提交者头像：显示在提交者名字左边，取不到时摘掉", async () => {
@@ -481,7 +497,7 @@ describe("提交记录来源", () => {
         // 短哈希是链接，点它不该切换展开状态
         const prevent = (event: Event) => event.preventDefault();
         document.addEventListener("click", prevent);
-        click(row.querySelector(".bazaar-release-notes__hash") as HTMLElement);
+        click(row.querySelector(".bazaar-release-notes__hash-link") as HTMLElement);
         document.removeEventListener("click", prevent);
         expect(detail.classList.contains("fn__none")).toBe(false);
     });

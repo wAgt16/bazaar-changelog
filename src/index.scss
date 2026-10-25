@@ -102,9 +102,10 @@
   }
 
   &__commit {
-    // 哈希列的宽度：7 位短哈希之外再留一个图标的位置。图标类插件会给链接加图标，
-    // 只按 7ch 留宽度时哈希会被挤到下一行。
-    --commit-hash-column: calc(7ch + 24px);
+    // 哈希列只按 7 位短哈希的宽度留位置；展开的提交信息要从提交信息那一列开始，
+    // 所以间距也记成变量
+    --commit-hash-column: 7ch;
+    --commit-hash-gap: 4px;
 
     // 相邻两行之间加一条淡分隔线，扫读时不容易串行
     & + & {
@@ -115,7 +116,6 @@
       align-items: center;
       cursor: pointer;
       display: flex;
-      gap: 8px;
       height: auto;
       min-height: 28px;
       padding: 4px 8px;
@@ -155,17 +155,22 @@
     width: 16px;
   }
 
-  // 短哈希固定占一列，各行的哈希因此左对齐；列宽写成 min-width，
-  // 图标比预留位置还宽时让列自己长，而不是把哈希挤断行
+  // 短哈希列：列只占 7 位短哈希的宽度，链接只包住那几个字 ——
+  // 中间那截空白不属于链接，点它只展开提交信息，不会跳去 GitHub。
+  // 列宽写成 min-width：图标类插件给链接加了图标时让列自己长，而不是把哈希挤断行
   &__hash {
-    color: var(--b3-theme-primary);
+    display: flex;
     flex: 0 0 auto;
     font-family: var(--b3-font-family-code);
     font-size: var(--b3-font-size);
+    margin-right: var(--commit-hash-gap);
     min-width: var(--commit-hash-column);
-    text-align: left;
-    text-decoration: none;
     white-space: nowrap;
+  }
+
+  &__hash-link {
+    color: var(--b3-theme-primary);
+    text-decoration: none;
 
     &:hover {
       text-decoration: underline;
@@ -177,7 +182,7 @@
     color: var(--b3-theme-on-surface);
     font-family: var(--b3-font-family-code);
     font-size: var(--b3-font-size);
-    padding: 0 8px 8px calc(var(--commit-hash-column) + 16px);
+    padding: 0 8px 8px calc(8px + var(--commit-hash-column) + var(--commit-hash-gap));
     white-space: pre-wrap;
     word-break: break-word;
   }
